@@ -194,6 +194,51 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
+    def annotate_time(self) -> list:
+        """
+        Annotates the time of each row in the song, taking into account the speed and bpm changes.
+
+        :return: A list of annotated times, in seconds.
+        """
+
+        annotated_time = (len(self.pattern_seq) * MODSong.ROWS) * [0.0]
+
+        # default timing for MOD files, if nothing is specified
+        bpm = 125
+        speed = 6
+
+        d = Song.get_tick_duration(bpm)
+
+        idx = 1
+        for p in self.pattern_seq:
+            for r in range(MODSong.ROWS):
+                for c in range(MODSong.CHANNELS):
+                    efx = self.patterns[p].data[c][r].effect
+                    if efx != "" and efx[0] == "F":
+                        v = int(efx[1:], 16)
+                        if v <= 31:
+                            speed = v
+                        else:
+                            bpm = v
+                        d = Song.get_tick_duration(bpm)
+                        # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
+                annotated_time[idx] = annotated_time[idx - 1] + d * speed
+                idx += 1
+                if idx == len(annotated_time):
+                    break
+
+        return annotated_time
+
+    def get_song_length(self) -> tuple[int, int]:
+        """
+        Returns the length of the song in minutes and seconds.
+
+        :return: A tuple (int, int) containing the minutes and seconds of the song length.
+        """
+        
+        song_length = self.annotate_time()[-1]
+        return int(song_length / 60), int(song_length % 60)
+
     def save(self, fname: str, verbose: bool = True):
         """
         Saves the song to file; the format is automatically determined by the file extension.
