@@ -133,29 +133,47 @@ class Song(ABC):
         return artist_name, song_name
 
     @abstractmethod
-    def annotate_time(self) -> list:
+    def annotate_time(self) -> list[list[float]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
-        :return: A list of annotated times, a value in seconds per row.
+        :return: A list where each element is a list corresponding to pattern in the sequence.
+                 Within each list, each row is annotated with a time in seconds.
         """
         pass
-
-    def get_song_length(self) -> tuple[int, int]:
-        """
-        Returns the length of the song in minutes and seconds.
-
-        :return: A tuple (int, int) containing the minutes and seconds of the song length.
-        """
-        
-        song_length = self.annotate_time()[-1]
-        return int(song_length / 60), int(song_length % 60)
 
     '''
     -------------------------------------
     PATTERNS
     -------------------------------------
     '''
+
+    @abstractmethod
+    def get_effective_row_count(self, pattern: int = -1) -> int:
+        """
+        Returns the effective length of a pattern, accounting for position jumps and breaks.
+
+        :param pattern: The pattern index (within the song sequence). -1 for the entire song.
+        :return: The effective number of rows that gets played in the pattern / song.
+        """
+        pass
+
+    def get_length(self, pattern: int = -1) -> float
+        """
+        Returns the length of a pattern in seconds.
+
+        :param pattern: The pattern index (within the song sequence). -1 for the entire song.
+        :return: The pattern / song length in seconds.
+        """
+        #TODO
+
+        annotated_times = self.annotate_time()
+        row_count = self.get_effective_row_count(pattern)
+
+        if pattern != -1:
+            
+
+        return ???
 
     def remove_patterns_after(self, pattern: int):
         """

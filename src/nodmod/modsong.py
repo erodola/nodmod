@@ -7,7 +7,7 @@ import os
 import subprocess
 import shutil
 import pydub
- 
+
 
 class MODSong(Song):
 
@@ -399,14 +399,15 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def annotate_time(self) -> list:
+    def annotate_time(self) -> list[list[float]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
-        :return: A list of annotated times, a value in seconds per row.
-        """
+        FIXME: account for pattern delays, loops, and jumps (Bxx Dxx, E6x, EEx effects).
 
-        annotated_time = (len(self.pattern_seq) * MODSong.ROWS) * [0.0]
+        :return: A list where each element is a list corresponding to pattern in the sequence.
+                 Within each list, each row is annotated with a time in seconds.
+        """
 
         # default timing for MOD files, if nothing is specified
         bpm = 125
@@ -414,26 +415,40 @@ class MODSong(Song):
 
         d = Song.get_tick_duration(bpm)
 
-        idx = 1
+        annotated_song = []
+
         for p in self.pattern_seq:
+
+            annotated_pattern = []
+
             for r in range(MODSong.ROWS):
                 for c in range(MODSong.CHANNELS):
+
                     efx = self.patterns[p].data[c][r].effect
+                        
                     if efx != "" and efx[0] == "F":
                         v = int(efx[1:], 16)
                         if v <= 31:
                             speed = v
                         else:
                             bpm = v
+
                         d = Song.get_tick_duration(bpm)
                         # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
-                annotated_time[idx] = annotated_time[idx - 1] + d * speed
-                idx += 1
-                if idx == len(annotated_time):
-                    break
 
-        return annotated_time
+                annotated_pattern.append(d * speed)
 
+            annotated_song.append(annotated_pattern)
+
+        # cumsum over the entire list of lists
+        cum = 0
+        for p in range(len(annotated_song)):
+            for r in range(len(annotated_song[p])):
+                cum += annotated_song[p][r]
+                annotated_song[p][r] = cum
+
+        return annotated_song
+    
     '''
     -------------------------------------
     SAMPLES AND INSTRUMENTS
@@ -544,6 +559,41 @@ class MODSong(Song):
         self.pattern_seq.append(n)
 
         return n
+
+    def get_effective_row_count(self, pattern: int = -1) -> int:
+        """
+        Returns the effective length of a pattern, accounting for position jumps and breaks.
+
+        FIXME: detect cases where a pattern is not played at all, delayed, looped, or not 
+              played from the beginning, due to Bxx Dxx, E6x, EEx effects.
+
+        :param pattern: The pattern index (within the song sequence). -1 for the entire song.
+        :return: The effective number of rows that gets played in the pattern / song.
+        """
+
+        if pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        if pattern == -1:
+            pattern_seq = range(len(self.pattern_seq))
+        else:
+            pattern_seq = [pattern]
+        
+        effective_rows = 0
+        for p in pattern_seq:
+            D = self.patterns[self.pattern_seq[p]].data
+            for r in range(MODSong.ROWS):
+                jump = False
+                for c in range(MODSong.CHANNELS):
+                    efx = D[c][r].effect
+                    if efx != '' and (efx[0] == "B" or efx[0] == "D"):
+                        jump = True
+                        break
+                effective_rows += 1
+                if jump:
+                    break
+        
+        return effective_rows
 
     '''
     -------------------------------------
