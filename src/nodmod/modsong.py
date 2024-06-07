@@ -48,6 +48,12 @@ class MODSong(Song):
         self.pattern_seq = [0]
         self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
 
+    '''
+    -------------------------------------
+    IMPORT AND EXPORT
+    -------------------------------------
+    '''
+
     def load_from_file(self, fname: str, verbose: bool = True):
         """
         Loads a song from a standard MOD file.
@@ -191,41 +197,6 @@ class MODSong(Song):
 
         if verbose:
             print('done.')
-
-    def annotate_time(self) -> list:
-        """
-        Annotates the time of each row in the song, taking into account the speed and bpm changes.
-
-        :return: A list of annotated times, a value in seconds per row.
-        """
-
-        annotated_time = (len(self.pattern_seq) * MODSong.ROWS) * [0.0]
-
-        # default timing for MOD files, if nothing is specified
-        bpm = 125
-        speed = 6
-
-        d = Song.get_tick_duration(bpm)
-
-        idx = 1
-        for p in self.pattern_seq:
-            for r in range(MODSong.ROWS):
-                for c in range(MODSong.CHANNELS):
-                    efx = self.patterns[p].data[c][r].effect
-                    if efx != "" and efx[0] == "F":
-                        v = int(efx[1:], 16)
-                        if v <= 31:
-                            speed = v
-                        else:
-                            bpm = v
-                        d = Song.get_tick_duration(bpm)
-                        # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
-                annotated_time[idx] = annotated_time[idx - 1] + d * speed
-                idx += 1
-                if idx == len(annotated_time):
-                    break
-
-        return annotated_time
 
     def save_as_ascii(self, fname: str, verbose: bool = True):
         """
@@ -379,134 +350,6 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def load_sample(self, fname: str, sample_idx: int = 0) -> tuple[int, Sample]:
-        """
-        Loads a sample from a WAV file, and stores it at the given sample index.
-
-        :param fname: The complete file path to the .wav file.
-        :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
-                           Use 0 to automatically use the next available slot.
-        :return: A tuple (int, Sample) containing:
-                 - the index of the added sample, from 1 to 31
-                 - the corresponding sample object
-        """
-
-        if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}.")
-        
-        if sample_idx == 0:
-            for i in range(MODSong.SAMPLES):
-                if len(self.samples[i].waveform) == 0:
-                    sample_idx = i + 1
-                    break
-            if sample_idx == 0:
-                raise ValueError(f"Couldn't find an empty slot for the new sample.")
-
-        self.samples[sample_idx - 1] = Sample()  # reset all attributes
-
-        audio = pydub.AudioSegment.from_wav(fname).set_channels(1)
-        if audio.sample_width != 1:
-            audio = audio.set_sample_width(1)
-
-        self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
-
-        return sample_idx, self.samples[sample_idx - 1]
-
-    def clear_channel(self, channel: int):
-        """
-        Clears completely a specified channel in the entire song.
-        Warning: If you use this as a way to mute a channel, be careful because it also deletes global effects like bpm.
-
-        :param channel: The channel index to mute, 1 to 4.
-        :return: None.
-        """
-
-        if channel <= 0 or channel > MODSong.CHANNELS:
-            raise IndexError(f"Invalid channel index {channel}")
-
-        for p in range(len(self.patterns)):
-            for r in range(MODSong.ROWS):
-                self.patterns[p].data[channel - 1][r] = Note()
-
-    def clear_pattern(self, pattern: int):
-        """
-        Clears completely a specified pattern.
-
-        :param pattern: The pattern index (within the song sequence) to be cleared.
-        :return: None.
-        """
-
-        if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
-
-        p = self.pattern_seq[pattern]
-        for r in range(MODSong.ROWS):
-            for c in range(MODSong.CHANNELS):
-                self.patterns[p].data[c][r] = Note()
-
-    def add_pattern(self) -> int:
-        """
-        Creates a brand new pattern and adds it to the song sequence.
-
-        :return: The index of the new pattern.
-        """
-
-        self.patterns.append(Pattern(MODSong.ROWS, MODSong.CHANNELS))
-        n = len(self.patterns) - 1
-        self.pattern_seq.append(n)
-
-        return n
-
-    def get_sample(self, sample_idx: int) -> Sample:
-
-        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
-
-        return self.samples[sample_idx - 1]
-
-    def remove_sample(self, sample_idx: int):
-        """
-        Deletes the sample from the sample bank.
-        WARNING: This does not remove the sample notes from the song. The notes will stay, but will play mute.
-
-        :param sample_idx: The sample index to remove, 1 to 31.
-        :return: None.
-        """
-
-        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
-
-        self.samples[sample_idx] = Sample()
-
-    def keep_sample(self, sample_idx: int):
-        """
-        Deletes all samples in the sample bank, except for the one specified by the given index.
-        WARNING: This does not remove the sample notes from the song. The notes will stay, but will play mute.
-
-        :param sample_idx: The sample index to be kept, 1 to 31.
-        :return: None.
-        """
-
-        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
-
-        for s in range(MODSong.SAMPLES):
-            if s + 1 != sample_idx:
-                self.samples[s] = Sample()
-
-    def get_note(self, pattern_in_song: int, row: int, channel: int) -> Note:
-
-        if row < 0 or row >= MODSong.ROWS:
-            raise IndexError(f"Invalid row index {row}")
-
-        if channel < 0 or channel >= MODSong.CHANNELS:
-            raise IndexError(f"Invalid channel index {channel}")
-
-        if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern_in_song}")
-
-        return self.patterns[self.pattern_seq[pattern_in_song]].data[channel][row]
-
     def render_as_wav(self, fname: str, verbose: bool = True, cleanup: bool = False):
         """
         Renders the current song as a WAV file.
@@ -549,38 +392,186 @@ class MODSong(Song):
 
         if verbose:
             print("done.")
+    
+    '''
+    -------------------------------------
+    SONG
+    -------------------------------------
+    '''
 
-    def set_bpm(self, pattern: int, channel: int, row: int, bpm: int):
+    def annotate_time(self) -> list:
         """
-        Sets the bpm (tempo) at the given pattern, row and channel, overwriting whatever other effect is there.
+        Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
-        :param pattern: The pattern index (in the sequence) to write to.
-        :param channel: The channel index to write to, 0-based.
-        :param row: The row index to write to, 0-based.
-        :param bpm: The bpm value to set, from 32 to 255.
+        :return: A list of annotated times, a value in seconds per row.
+        """
+
+        annotated_time = (len(self.pattern_seq) * MODSong.ROWS) * [0.0]
+
+        # default timing for MOD files, if nothing is specified
+        bpm = 125
+        speed = 6
+
+        d = Song.get_tick_duration(bpm)
+
+        idx = 1
+        for p in self.pattern_seq:
+            for r in range(MODSong.ROWS):
+                for c in range(MODSong.CHANNELS):
+                    efx = self.patterns[p].data[c][r].effect
+                    if efx != "" and efx[0] == "F":
+                        v = int(efx[1:], 16)
+                        if v <= 31:
+                            speed = v
+                        else:
+                            bpm = v
+                        d = Song.get_tick_duration(bpm)
+                        # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
+                annotated_time[idx] = annotated_time[idx - 1] + d * speed
+                idx += 1
+                if idx == len(annotated_time):
+                    break
+
+        return annotated_time
+
+    '''
+    -------------------------------------
+    SAMPLES AND INSTRUMENTS
+    -------------------------------------
+    '''
+
+    def load_sample(self, fname: str, sample_idx: int = 0) -> tuple[int, Sample]:
+        """
+        Loads a sample from a WAV file, and stores it at the given sample index.
+
+        :param fname: The complete file path to the .wav file.
+        :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
+                           Use 0 to automatically use the next available slot.
+        :return: A tuple (int, Sample) containing:
+                 - the index of the added sample, from 1 to 31
+                 - the corresponding sample object
+        """
+
+        if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}.")
+        
+        if sample_idx == 0:
+            for i in range(MODSong.SAMPLES):
+                if len(self.samples[i].waveform) == 0:
+                    sample_idx = i + 1
+                    break
+            if sample_idx == 0:
+                raise ValueError(f"Couldn't find an empty slot for the new sample.")
+
+        self.samples[sample_idx - 1] = Sample()  # reset all attributes
+
+        audio = pydub.AudioSegment.from_wav(fname).set_channels(1)
+        if audio.sample_width != 1:
+            audio = audio.set_sample_width(1)
+
+        self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
+
+        return sample_idx, self.samples[sample_idx - 1]
+
+    def get_sample(self, sample_idx: int) -> Sample:
+
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
+
+        return self.samples[sample_idx - 1]
+
+    def remove_sample(self, sample_idx: int):
+        """
+        Deletes the sample from the sample bank.
+        WARNING: This does not remove the sample notes from the song. The notes will stay, but will play mute.
+
+        :param sample_idx: The sample index to remove, 1 to 31.
         :return: None.
         """
 
-        if bpm < 32 or bpm > 255:
-            raise ValueError(f"Invalid tempo {bpm}")
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
 
-        self.write_effect(pattern, channel, row, f"F{bpm:02X}")
+        self.samples[sample_idx] = Sample()
 
-    def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
+    def keep_sample(self, sample_idx: int):
         """
-        Sets the ticks per row (speed) at the given pattern, row and channel, overwriting whatever other effect is there.
+        Deletes all samples in the sample bank, except for the one specified by the given index.
+        WARNING: This does not remove the sample notes from the song. The notes will stay, but will play mute.
 
-        :param pattern: The pattern index (in the sequence) to write to.
-        :param channel: The channel index to write to, 0-based.
-        :param row: The row index to write to, 0-based.
-        :param ticks: The speed value to set, from 1 to 31.
+        :param sample_idx: The sample index to be kept, 1 to 31.
         :return: None.
         """
 
-        if ticks < 1 or ticks > 31:
-            raise ValueError(f"Invalid ticks per row {ticks}")
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
 
-        self.write_effect(pattern, channel, row, f"F{ticks:02X}")
+        for s in range(MODSong.SAMPLES):
+            if s + 1 != sample_idx:
+                self.samples[s] = Sample()
+    
+    '''
+    -------------------------------------
+    PATTERNS
+    -------------------------------------
+    '''
+
+    def clear_pattern(self, pattern: int):
+        """
+        Clears completely a specified pattern.
+
+        :param pattern: The pattern index (within the song sequence) to be cleared.
+        :return: None.
+        """
+
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        p = self.pattern_seq[pattern]
+        for r in range(MODSong.ROWS):
+            for c in range(MODSong.CHANNELS):
+                self.patterns[p].data[c][r] = Note()
+
+    def add_pattern(self) -> int:
+        """
+        Creates a brand new pattern and adds it to the song sequence.
+
+        :return: The index of the new pattern.
+        """
+
+        self.patterns.append(Pattern(MODSong.ROWS, MODSong.CHANNELS))
+        n = len(self.patterns) - 1
+        self.pattern_seq.append(n)
+
+        return n
+
+    '''
+    -------------------------------------
+    CHANNELS
+    -------------------------------------
+    '''
+
+    def clear_channel(self, channel: int):
+        """
+        Clears completely a specified channel in the entire song.
+        Warning: If you use this as a way to mute a channel, be careful because it also deletes global effects like bpm.
+
+        :param channel: The channel index to mute, 1 to 4.
+        :return: None.
+        """
+
+        if channel <= 0 or channel > MODSong.CHANNELS:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        for p in range(len(self.patterns)):
+            for r in range(MODSong.ROWS):
+                self.patterns[p].data[channel - 1][r] = Note()
+
+    '''
+    -------------------------------------
+    NOTES
+    -------------------------------------
+    '''
 
     @staticmethod
     def get_sample_from_note(note: bytearray) -> int:
@@ -621,3 +612,221 @@ class MODSong(Song):
             return MODSong.PERIOD_TABLE[period_raw]
         else:
             return ""
+
+    def get_note(self, pattern_in_song: int, row: int, channel: int) -> Note:
+
+        if row < 0 or row >= MODSong.ROWS:
+            raise IndexError(f"Invalid row index {row}")
+
+        if channel < 0 or channel >= MODSong.CHANNELS:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern_in_song}")
+
+        return self.patterns[self.pattern_seq[pattern_in_song]].data[channel][row]
+    
+    '''
+    -------------------------------------
+    EFFECTS
+    -------------------------------------
+    '''
+
+    def set_bpm(self, pattern: int, channel: int, row: int, bpm: int):
+        """
+        Sets the bpm (tempo) at the given pattern, row and channel, overwriting whatever other effect is there.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param bpm: The bpm value to set, from 32 to 255.
+        :return: None.
+        """
+
+        if bpm < 32 or bpm > 255:
+            raise ValueError(f"Invalid tempo {bpm}")
+
+        self.write_effect(pattern, channel, row, f"F{bpm:02X}")
+        
+    def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
+        """
+        Sets the ticks per row (speed) at the given pattern, row and channel, overwriting whatever other effect is there.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param ticks: The speed value to set, from 1 to 31.
+        :return: None.
+        """
+
+        if ticks < 1 or ticks > 31:
+            raise ValueError(f"Invalid ticks per row {ticks}")
+
+        self.write_effect(pattern, channel, row, f"F{ticks:02X}")
+
+    def set_portamento(self, pattern: int, channel: int, row: int, slide: int):
+        """
+        Slides up or down the sample frequency by 'slide' notes per tick.
+        Therefore, the slide rate depends on the number of ticks per row.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param slide: The amount of notes to slide by, -255 to 255. 0 is ignored.
+        :return: None.
+        """
+
+        if slide < -255 or slide > 255:
+            raise ValueError(f"Invalid portamento slide {slide}")
+
+        if slide > 0:
+            self.write_effect(pattern, channel, row, f"1{slide:02X}")
+        elif slide < 0:
+            self.write_effect(pattern, channel, row, f"2{slide:02X}")
+
+    def set_tone_portamento(self, pattern: int, channel: int, row: int, speed: int):
+        """
+        Slides the previous note (usually of the same sample) to the current note.
+        The slide happens with the given speed.
+        The effect continues until the specified frequency is reached.
+        If speed=0, then the last speed used on the channel is used again.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param speed: The amount of notes per tick to slide by, 0 to 255.
+        :return: None.
+        """
+
+        if speed < 0 or speed > 255:
+            raise ValueError(f"Invalid tone portamento speed {speed}")
+
+        self.write_effect(pattern, channel, row, f"3{speed:02X}")
+
+    def set_tone_portamento_slide(self, pattern: int, channel: int, row: int, slide: int):
+        """
+        Continue a preceding tone portamento, sliding the volume up or down by a given amount.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param slide: The volume slide to set, -15 to 15. 0 is ignored.
+        :return: None.
+        """
+
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid tone portamento slide {slide}")
+        
+        efx = 0
+        if slide > 0:
+            efx = slide << 4
+        elif slide < 0:
+            efx = -slide
+        
+        self.write_effect(pattern, channel, row, f"5{efx:02X}")
+        
+    def set_volume(self, pattern: int, channel: int, row: int, volume: int):
+        """
+        Sets the volume.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param volume: The volume to set, 0 to 64.
+        :return: None.
+        """
+
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid volume {volume}")
+
+        self.write_effect(pattern, channel, row, f"C{volume:02X}")
+
+    def set_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
+        """
+        Slides the volume up or down by a given amount.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param slide: The volume slide to set, -15 to 15. 0 is ignored.
+        :return: None.
+        """
+
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid volume slide {slide}")
+        
+        efx = 0
+        if slide > 0:
+            efx = slide << 4
+        elif slide < 0:
+            efx = -slide
+        
+        self.write_effect(pattern, channel, row, f"A{efx:02X}")
+
+    def set_vibrato(self, pattern: int, channel: int, row: int, speed: int, depth: int):
+        """
+        Sets the vibrato effect with the given speed and depth.
+        If either speed or depth are 0, then reuse values from the most recent vibrato.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param speed: The vibrato speed (how fast it oscillates), 0 to 15.
+        :param depth: The vibrato depth (how much it oscillates), 0 to 15.
+        :return: None.
+        """
+
+        if speed < 0 or speed > 15:
+            raise ValueError(f"Invalid vibrato speed {speed}")
+        
+        if depth < 0 or depth > 15:
+            raise ValueError(f"Invalid vibrato depth {depth}")
+        
+        efx = 16 * speed + depth
+        
+        self.write_effect(pattern, channel, row, f"4{efx:02X}")
+
+    def set_vibrato_slide(self, pattern: int, channel: int, row: int, slide: int):
+        """
+        Continue a preceding vibrato, sliding the volume up or down by a given amount.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param slide: The volume slide to set, -15 to 15. 0 is ignored.
+        :return: None.
+        """
+
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid vibrato slide {slide}")
+        
+        efx = 0
+        if slide > 0:
+            efx = slide << 4
+        elif slide < 0:
+            efx = -slide
+        
+        self.write_effect(pattern, channel, row, f"6{efx:02X}")
+
+    def set_tremolo(self, pattern: int, channel: int, row: int, speed: int, depth: int):
+        """
+        Sets the tremolo effect with the given speed and depth.
+        If either speed or depth are 0, then reuse values from the most recent tremolo.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param speed: The tremolo speed (how fast it oscillates), 0 to 15.
+        :param depth: The tremolo depth (how much it oscillates), 0 to 15.
+        :return: None.
+        """
+
+        if speed < 0 or speed > 15:
+            raise ValueError(f"Invalid tremolo speed {speed}")
+        
+        if depth < 0 or depth > 15:
+            raise ValueError(f"Invalid tremolo depth {depth}")
+        
+        efx = 16 * speed + depth
+        
+        self.write_effect(pattern, channel, row, f"7{efx:02X}")

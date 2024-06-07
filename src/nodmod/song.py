@@ -92,6 +92,12 @@ class Song(ABC):
         self.samples = []
         self.n_actual_samples = 0  # The number of non-empty samples present in the song.
 
+    '''
+    -------------------------------------
+    SONG
+    -------------------------------------
+    '''
+
     def set_artist(self, artist_name: str):
         self.artist = artist_name
 
@@ -126,42 +132,6 @@ class Song(ABC):
         # print(f"{filename} | {artist_name} | {song_name}")
         return artist_name, song_name
 
-    def write_note(self, pattern:int, channel: int, row: int, sample: int, period: str, effect: str = ""):
-        """
-        Writes a note in the given pattern, channel and row with the given sample.
-        If no effect is given and the current note already has a speed effect, leaves it unchanged.
-
-        :param pattern: The pattern index (in the sequence) to write to.
-        :param channel: The channel index to write to, 0-based.
-        :param row: The row index to write to, 0-based.
-        :param sample: The sample index to write.
-        :param period: The note period (pitch) to write, e.g. "C-4".
-        :param effect: The note effect, e.g. "ED1".
-        :return: None.
-        """
-
-        cur_efx = self.patterns[self.pattern_seq[pattern]].data[channel][row].effect
-        if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
-            effect = cur_efx
-
-        self.patterns[self.pattern_seq[pattern]].data[channel][row] = (
-            Note(sample, period, effect))
-
-    def write_effect(self, pattern: int, channel: int, row: int, effect: str = ""):
-        """
-        Writes a given effect in the given pattern, channel and row.
-        Does not touch the period or sample, if present.
-
-        :param pattern: The pattern index (in the sequence) to write to.
-        :param channel: The channel index to write to, 0-based.
-        :param row: The row index to write to, 0-based.
-        :param effect: The desired effect, e.g. "ED1".
-        :return: None.
-        """
-
-        self.patterns[self.pattern_seq[pattern]].data[channel][row].effect \
-            = effect
-
     @abstractmethod
     def annotate_time(self) -> list:
         """
@@ -180,7 +150,13 @@ class Song(ABC):
         
         song_length = self.annotate_time()[-1]
         return int(song_length / 60), int(song_length % 60)
-    
+
+    '''
+    -------------------------------------
+    PATTERNS
+    -------------------------------------
+    '''
+
     def remove_patterns_after(self, pattern: int):
         """
         Removes all patterns (in the pattern sequence) after the specified one.
@@ -241,3 +217,51 @@ class Song(ABC):
         self.pattern_seq.append(n)
 
         return n
+
+    '''
+    -------------------------------------
+    NOTES
+    -------------------------------------
+    '''
+
+    def write_note(self, pattern:int, channel: int, row: int, sample: int, period: str, effect: str = ""):
+        """
+        Writes a note in the given pattern, channel and row with the given sample.
+        If no effect is given and the current note already has a speed effect, leaves it unchanged.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param sample: The sample index to write.
+        :param period: The note period (pitch) to write, e.g. "C-4".
+        :param effect: The note effect, e.g. "ED1".
+        :return: None.
+        """
+
+        cur_efx = self.patterns[self.pattern_seq[pattern]].data[channel][row].effect
+        if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
+            effect = cur_efx
+
+        self.patterns[self.pattern_seq[pattern]].data[channel][row] = (
+            Note(sample, period, effect))
+
+    '''
+    -------------------------------------
+    EFFECTS
+    -------------------------------------
+    '''
+
+    def write_effect(self, pattern: int, channel: int, row: int, effect: str = ""):
+        """
+        Writes a given effect in the given pattern, channel and row.
+        Does not touch the period or sample, if present.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param effect: The desired effect, e.g. "ED1".
+        :return: None.
+        """
+
+        self.patterns[self.pattern_seq[pattern]].data[channel][row].effect \
+            = effect
