@@ -7,6 +7,7 @@ import os
 import subprocess
 import shutil
 import pydub
+import copy
 
 
 class MODSong(Song):
@@ -399,11 +400,23 @@ class MODSong(Song):
     -------------------------------------
     '''
 
+    def get_song_duration(self) -> float:
+        """
+        Returns the duration of the song in seconds.
+
+        :return: The song duration in seconds.
+        """
+
+        # TODO: Implement this method.
+        
+        return 0.
+
     def annotate_time(self) -> list[list[float]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
         FIXME: account for pattern delays, loops, and jumps (Bxx Dxx, E6x, EEx effects).
+        FIXME: do a separate version for individual patterns, and another for the entire song.
 
         :return: A list where each element is a list corresponding to pattern in the sequence.
                  Within each list, each row is annotated with a time in seconds.
@@ -419,24 +432,35 @@ class MODSong(Song):
 
         for p in self.pattern_seq:
 
-            annotated_pattern = []
+            annotated_pattern = []  # annotate each pattern separately
 
             for r in range(MODSong.ROWS):
-                for c in range(MODSong.CHANNELS):
+
+                jump = False
+
+                for c in range(MODSong.CHANNELS):    
 
                     efx = self.patterns[p].data[c][r].effect
-                        
-                    if efx != "" and efx[0] == "F":
-                        v = int(efx[1:], 16)
-                        if v <= 31:
-                            speed = v
-                        else:
-                            bpm = v
+                    if efx != "":
+                     
+                        if efx[0] == "F":  # change of speed or bpm
 
-                        d = Song.get_tick_duration(bpm)
-                        # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
+                            v = int(efx[1:], 16)
+                            if v <= 31:
+                                speed = v
+                            else:
+                                bpm = v
+
+                            d = Song.get_tick_duration(bpm)
+                            # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
+
+                        elif efx[0] == "D":  # jump to a specific position in the next pattern in the sequence
+                            jump = True
 
                 annotated_pattern.append(d * speed)
+
+                if jump:
+                    break
 
             annotated_song.append(annotated_pattern)
 
@@ -560,40 +584,69 @@ class MODSong(Song):
 
         return n
 
-    def get_effective_row_count(self, pattern: int = -1) -> int:
+    def get_pattern_duration(self, pattern: int) -> float:
         """
-        Returns the effective length of a pattern, accounting for position jumps and breaks.
+        Returns the duration of a pattern in seconds.
 
-        FIXME: detect cases where a pattern is not played at all, delayed, looped, or not 
-              played from the beginning, due to Bxx Dxx, E6x, EEx effects.
+        :param pattern: The pattern index (within the song sequence).
+        :return: The pattern duration in seconds.
+        """
 
-        :param pattern: The pattern index (within the song sequence). -1 for the entire song.
-        :return: The effective number of rows that gets played in the pattern / song.
+        # TODO
+        
+        return 0.
+        
+    def get_effective_row_count(self, pattern: int) -> int:
+        """
+        Returns the effective number of rows that get played in a pattern.
+        Accounts for position jumps, loops, and breaks.
+
+        TODO: Implement a version for the entire song. 
+              It's not so trivial, because of position jumps effects (Dxx) and such.
+
+        :param pattern: The pattern index (within the song sequence).
+        :return: The effective number of rows that gets played in the pattern.
         """
 
         if pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
-        if pattern == -1:
-            pattern_seq = range(len(self.pattern_seq))
-        else:
-            pattern_seq = [pattern]
-        
         effective_rows = 0
-        for p in pattern_seq:
-            D = self.patterns[self.pattern_seq[p]].data
-            for r in range(MODSong.ROWS):
-                jump = False
-                for c in range(MODSong.CHANNELS):
-                    efx = D[c][r].effect
-                    if efx != '' and (efx[0] == "B" or efx[0] == "D"):
-                        jump = True
-                        break
-                effective_rows += 1
-                if jump:
-                    break
-        
-        return effective_rows
+        loop_start_row = 0  # used by E6x effect
+
+        data = copy.deepcopy(self.patterns[self.pattern_seq[pattern]].data)
+
+        unrolled_data = [[] for _ in range(MODSong.CHANNELS)]
+
+        for r in range(MODSong.ROWS):
+
+            interrupt = False  # if true, the pattern is cut short by Bxx or Dxx effects
+
+            for c in range(MODSong.CHANNELS):                
+
+                unrolled_data[c].append(data[c][r])
+
+                efx = data[c][r].effect
+                if efx != "":
+
+                    if efx[0] == "B" or efx[0] == "D":
+                        interrupt = True
+
+                    if efx[:2] == "E6":
+
+                        if int(efx[2], 16) == 0:  # E60 means loop start
+                            loop_start_row = r
+                        
+                        loop_end_row = r
+                        loop_count = int(efx[2], 16)
+
+                        for loop in range(loop_count):
+                            unrolled_data[c] += unrolled_data[c][loop_start_row:loop_end_row + 1]
+
+            if interrupt:
+                break
+    
+        return max([len(unrolled_data[c]) for c in range(MODSong.CHANNELS)])
 
     '''
     -------------------------------------

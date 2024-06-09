@@ -137,11 +137,22 @@ class Song(ABC):
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
+        TODO: do a separate version for individual patterns and the entire song
+
         :return: A list where each element is a list corresponding to pattern in the sequence.
                  Within each list, each row is annotated with a time in seconds.
         """
         pass
 
+    @abstractmethod
+    def get_song_duration(self) -> float:
+        """
+        Returns the duration of the song in seconds.
+
+        :return: The song duration in seconds.
+        """
+        pass
+    
     '''
     -------------------------------------
     PATTERNS
@@ -149,31 +160,27 @@ class Song(ABC):
     '''
 
     @abstractmethod
-    def get_effective_row_count(self, pattern: int = -1) -> int:
+    def get_effective_row_count(self, pattern: int) -> int:
         """
-        Returns the effective length of a pattern, accounting for position jumps and breaks.
+        Returns the effective number of rows that get played in a pattern.
+        Accounts for position jumps, loops, and breaks.
 
-        :param pattern: The pattern index (within the song sequence). -1 for the entire song.
-        :return: The effective number of rows that gets played in the pattern / song.
+        TODO: do a separate version for the entire song
+
+        :param pattern: The pattern index (within the song sequence).
+        :return: The effective number of rows that gets played in the pattern.
         """
         pass
 
-    def get_length(self, pattern: int = -1) -> float
+    @abstractmethod
+    def get_pattern_duration(self, pattern: int) -> float:
         """
-        Returns the length of a pattern in seconds.
+        Returns the duration of a pattern in seconds.
 
-        :param pattern: The pattern index (within the song sequence). -1 for the entire song.
-        :return: The pattern / song length in seconds.
+        :param pattern: The pattern index (within the song sequence).
+        :return: The pattern duration in seconds.
         """
-        #TODO
-
-        annotated_times = self.annotate_time()
-        row_count = self.get_effective_row_count(pattern)
-
-        if pattern != -1:
-            
-
-        return ???
+        pass
 
     def remove_patterns_after(self, pattern: int):
         """
