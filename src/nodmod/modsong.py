@@ -404,13 +404,13 @@ class MODSong(Song):
 
     def timestamp(self) -> list[list[float]]:
         """
-        Annotates the time of each row in the song, taking into account the speed and bpm changes.
+        Computes the timestamp of each row in the song.
+        Takes into account speed / bpm changes, pattern breaks, and position jumps.
 
-        FIXME: account for pattern delays, loops, and jumps (Bxx Dxx, E6x, EEx effects).
-        TODO: do a separate version for individual patterns.
+        FIXME: implement pattern delays (EEx), loops (E6x).
 
         :return: A list where each element is a list corresponding to pattern in the sequence.
-                 Within each list, each row is annotated with a time in seconds.
+                 Within each list, each row is a timestamp in seconds.
         """
 
         # default timing for MOD files, if nothing is specified
@@ -419,15 +419,28 @@ class MODSong(Song):
 
         d = Song.get_tick_duration(bpm)
 
-        annotated_song = []
+        timestamps = []
+
+        jump_to_position = -1  # modified by Dxx effect
+        jump_to_pattern = -1  # modified by Bxx effect
+
+        start_row = 0
 
         for p in self.pattern_seq:
 
-            annotated_pattern = []  # annotate each pattern separately
+            # skip patterns until the one specified by Bxx effect is reached
+            if jump_to_pattern != -1:
+                jump_to_pattern -= 1
+                continue
 
-            for r in range(MODSong.ROWS):
+            pattern_timestamps = []  # annotate each pattern separately
 
-                jump = False
+            for r in range(start_row, MODSong.ROWS):
+
+                # reset the jump flags
+                if jump_to_position != -1:
+                    jump_to_position = -1
+                    start_row = 0
 
                 for c in range(MODSong.CHANNELS):    
 
@@ -445,24 +458,35 @@ class MODSong(Song):
                             d = Song.get_tick_duration(bpm)
                             # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
 
-                        elif efx[0] == "D":  # jump to a specific position in the next pattern in the sequence
-                            jump = True
+                        elif efx[0] == "D":  # jump to a specific row in the next pattern
+                            jump_to_position = int(efx[1:], 10)  # NOTE: decimal, not hex
+                            break
 
-                annotated_pattern.append(d * speed)
+                        elif efx[0] == "B":  # break to a specific pattern
+                            jump_to_pattern = int(efx[1:], 16)
+                            break
 
-                if jump:
+                pattern_timestamps.append(d * speed)
+
+                if jump_to_position != -1:
+                    start_row = jump_to_position
                     break
 
-            annotated_song.append(annotated_pattern)
+                if jump_to_pattern != -1:
+                    jump_to_pattern -= p + 2
+                    start_row = 0
+                    break
+
+            timestamps.append(pattern_timestamps)
 
         # cumsum over the entire list of lists
         cum = 0
-        for p in range(len(annotated_song)):
-            for r in range(len(annotated_song[p])):
-                cum += annotated_song[p][r]
-                annotated_song[p][r] = cum
+        for p in range(len(timestamps)):
+            for r in range(len(timestamps[p])):
+                cum += timestamps[p][r]
+                timestamps[p][r] = cum
 
-        return annotated_song
+        return timestamps
     
     '''
     -------------------------------------
