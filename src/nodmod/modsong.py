@@ -6,7 +6,7 @@ import array
 import os
 import subprocess
 import shutil
-import pydub
+import pydub  # needed for loading WAV samples
 import copy
 
 
@@ -73,7 +73,7 @@ class MODSong(Song):
 
             data = bytearray(mod_file.read())
 
-            # TODO: check if the .mod file is in packed format (never happened so far)
+            # TODO: check if the MOD file is in packed format (never happened so far)
 
             magic_string = data[1080:1080 + 4].decode('utf-8')
             if magic_string != "M.K.":  # non-standard mod file
@@ -187,7 +187,9 @@ class MODSong(Song):
                         if e_type != 0 or e_param != 0:
 
                             # dirty way for converting hex number to string... e.g. 0xF1 -> "F1"
-                            note.effect = hex(e_type).lstrip("0x").upper() + hex(e_param)[2:].upper()
+                            note.effect = hex(e_type).lstrip("0x").upper() 
+                            # note.effect += hex(e_param)[2:].upper()  # dunno why i was doing this...
+                            note.effect += f"{e_param:02X}"
                             
                             if e_type == 0:  # arpeggio effect
                                 note.effect = "0" + note.effect
@@ -400,23 +402,12 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def get_song_duration(self) -> float:
-        """
-        Returns the duration of the song in seconds.
-
-        :return: The song duration in seconds.
-        """
-
-        # TODO: Implement this method.
-        
-        return 0.
-
-    def annotate_time(self) -> list[list[float]]:
+    def timestamp(self) -> list[list[float]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
         FIXME: account for pattern delays, loops, and jumps (Bxx Dxx, E6x, EEx effects).
-        FIXME: do a separate version for individual patterns, and another for the entire song.
+        TODO: do a separate version for individual patterns.
 
         :return: A list where each element is a list corresponding to pattern in the sequence.
                  Within each list, each row is annotated with a time in seconds.
@@ -513,6 +504,12 @@ class MODSong(Song):
         return sample_idx, self.samples[sample_idx - 1]
 
     def get_sample(self, sample_idx: int) -> Sample:
+        """
+        Returns the sample object at the given index.
+        
+        :param sample_idx: The sample index to retrieve, 1 to 31.
+        :return: The sample object.
+        """
 
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}")
@@ -596,7 +593,7 @@ class MODSong(Song):
         
         return 0.
         
-    def get_effective_row_count(self, pattern: int) -> int:
+    def get_effective_row_count(self, pattern: int, include_loops: bool = True) -> int:
         """
         Returns the effective number of rows that get played in a pattern.
         Accounts for position jumps, loops, and breaks.
@@ -605,6 +602,7 @@ class MODSong(Song):
               It's not so trivial, because of position jumps effects (Dxx) and such.
 
         :param pattern: The pattern index (within the song sequence).
+        :param include_loops: True to also count the rows that get played in loops.
         :return: The effective number of rows that gets played in the pattern.
         """
 
@@ -632,7 +630,7 @@ class MODSong(Song):
                     if efx[0] == "B" or efx[0] == "D":
                         interrupt = True
 
-                    if efx[:2] == "E6":
+                    if include_loops and efx[:2] == "E6":
 
                         if int(efx[2], 16) == 0:  # E60 means loop start
                             loop_start_row = r
@@ -657,7 +655,7 @@ class MODSong(Song):
     def clear_channel(self, channel: int):
         """
         Clears completely a specified channel in the entire song.
-        Warning: If you use this as a way to mute a channel, be careful because it also deletes global effects like bpm.
+        WARNING: If you use this as a way to mute a channel, be careful because it also deletes global effects like bpm.
 
         :param channel: The channel index to mute, 1 to 4.
         :return: None.
@@ -717,6 +715,14 @@ class MODSong(Song):
             return ""
 
     def get_note(self, pattern_in_song: int, row: int, channel: int) -> Note:
+        """
+        Returns the note object at the given pattern, row and channel.
+        
+        :param pattern_in_song: The pattern index (in the sequence) to read from.
+        :param row: The row index to read from, 0-based.
+        :param channel: The channel index to read from, 0-based.
+        :return: The note object.
+        """
 
         if row < 0 or row >= MODSong.ROWS:
             raise IndexError(f"Invalid row index {row}")

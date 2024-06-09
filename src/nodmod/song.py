@@ -133,25 +133,23 @@ class Song(ABC):
         return artist_name, song_name
 
     @abstractmethod
-    def annotate_time(self) -> list[list[float]]:
+    def timestamp(self) -> list[list[float]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
-
-        TODO: do a separate version for individual patterns and the entire song
 
         :return: A list where each element is a list corresponding to pattern in the sequence.
                  Within each list, each row is annotated with a time in seconds.
         """
         pass
 
-    @abstractmethod
     def get_song_duration(self) -> float:
         """
         Returns the duration of the song in seconds.
 
         :return: The song duration in seconds.
         """
-        pass
+        
+        return self.timestamp()[-1][-1]
     
     '''
     -------------------------------------
