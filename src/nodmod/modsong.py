@@ -402,24 +402,26 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def timestamp(self) -> list[list[float]]:
+    def timestamp(self) -> list[list[float, int, int]]:
         """
         Computes the timestamp of each row in the song.
         Takes into account speed / bpm changes, pattern breaks, and position jumps.
 
-        FIXME: implement pattern delays (EEx), loops (E6x).
+        FIXME: implement pattern delays (EEx) and loops (E6x).
 
         :return: A list where each element is a list corresponding to pattern in the sequence.
-                 Within each list, each row is a timestamp in seconds.
+                 Within each list, each row is a triple (timestamp [s], speed, bpm).
         """
 
         # default timing for MOD files, if nothing is specified
         bpm = 125
-        speed = 6
+        speed = 6  # ticks per row
 
         d = Song.get_tick_duration(bpm)
 
         timestamps = []
+        speeds = []
+        bpms = []
 
         jump_to_position = -1  # modified by Dxx effect
         jump_to_pattern = -1  # modified by Bxx effect
@@ -433,7 +435,10 @@ class MODSong(Song):
                 jump_to_pattern -= 1
                 continue
 
-            pattern_timestamps = []  # annotate each pattern separately
+            # we annotate each pattern separately
+            pattern_timestamps = []
+            pattern_speeds = []
+            pattern_bpms = []
 
             for r in range(start_row, MODSong.ROWS):
 
@@ -467,6 +472,8 @@ class MODSong(Song):
                             break
 
                 pattern_timestamps.append(d * speed)
+                pattern_speeds.append(speed)
+                pattern_bpms.append(bpm)
 
                 if jump_to_position != -1:
                     start_row = jump_to_position
@@ -478,13 +485,15 @@ class MODSong(Song):
                     break
 
             timestamps.append(pattern_timestamps)
+            speeds.append(pattern_speeds)
+            bpms.append(pattern_bpms)
 
         # cumsum over the entire list of lists
         cum = 0
         for p in range(len(timestamps)):
             for r in range(len(timestamps[p])):
                 cum += timestamps[p][r]
-                timestamps[p][r] = cum
+                timestamps[p][r] = (cum, speeds[p][r], bpms[p][r])
 
         return timestamps
     
