@@ -1,7 +1,4 @@
-import binascii
-import random
-import string
-import struct
+import copy
 import array
 import os
 from abc import ABC, abstractmethod
@@ -95,10 +92,11 @@ class Song(ABC):
         self.samples = []
         self.n_actual_samples = 0  # The number of non-empty samples present in the song.
 
-        self.current_sample = 0
-        self.current_pattern = 0
-        self.current_channel = 0
-        self.current_row = 0
+    '''
+    -------------------------------------
+    SONG
+    -------------------------------------
+    '''
 
     def set_artist(self, artist_name: str):
         self.artist = artist_name
@@ -108,6 +106,15 @@ class Song(ABC):
 
     @staticmethod
     def get_tick_duration(bpm: int) -> float:
+        """
+        Returns the duration of a single tick in seconds, given the tempo in BPM.
+        A tick is the smallest unit of time in a song.
+        When the music is played, each row is played for a number of ticks (called 'speed').
+
+        :param bpm: The tempo in beats per minute.
+        :return: The duration of a single tick in seconds.
+        """
+
         return 2.5 / bpm  # See the 'Classic' tempo mode at https://wiki.openmpt.org/Manual:_Song_Properties
 
     @staticmethod
@@ -125,43 +132,159 @@ class Song(ABC):
         # print(f"{filename} | {artist_name} | {song_name}")
         return artist_name, song_name
 
-    def use_pattern(self, pattern_idx: int):
+    @abstractmethod
+    def timestamp(self) -> list[list[float, int, int]]:
         """
-        Sets the pattern to use for writing.
+        Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
-        :param pattern_idx: The index of the pattern to use.
+        :return: A list where each element is a list corresponding to pattern in the sequence.
+                 Within each list, each row is a triple (timestamp [s], speed, bpm).
+        """
+        pass
+
+    def get_song_duration(self) -> float:
+        """
+        Returns the duration of the song in seconds.
+
+        :return: The song duration in seconds.
+        """
+        
+        return self.timestamp()[-1][-1][0]
+    
+    '''
+    -------------------------------------
+    PATTERNS
+    -------------------------------------
+    '''
+
+    @abstractmethod
+    def get_effective_row_count(self, pattern: int) -> int:
+        """
+        Returns the effective number of rows that get played in a pattern.
+        Accounts for position jumps, loops, and breaks.
+
+        TODO: do a separate version for the entire song
+
+        :param pattern: The pattern index (within the song sequence).
+        :return: The effective number of rows that gets played in the pattern.
+        """
+        pass
+
+    @abstractmethod
+    def get_pattern_duration(self, pattern: int) -> float:
+        """
+        Returns the duration of a pattern in seconds.
+
+        :param pattern: The pattern index (within the song sequence).
+        :return: The pattern duration in seconds.
+        """
+        pass
+
+    def remove_patterns_after(self, pattern: int):
+        """
+        Removes all patterns (in the pattern sequence) after the specified one.
+
+        :param pattern: The pattern index (within the song sequence) to remove all patterns after.
         :return: None.
         """
 
-        if pattern_idx < 0 or pattern_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern_idx}")
-        self.current_pattern = pattern_idx
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
 
-    def write_note(self, period: str, effect: str = ""):
+        self.pattern_seq = self.pattern_seq[:pattern + 1]
+
+    def remove_pattern_from_seq(self, pattern: int):
         """
-        Writes a note in the current pattern, channel and row with the current sample.
+        Removes a specified pattern from the song sequence.
+
+        Example:
+        - The current sequence is 2, 14, 1, 0, 0, 17
+        - self.remove_pattern_from_seq(3)
+        - The new sequence is 2, 14, 1, 0, 17
+
+        :param pattern: The pattern index (within the song sequence) to be removed.
+        :return: None.
+        """
+
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        self.pattern_seq = self.pattern_seq[:pattern] + self.pattern_seq[pattern + 1:]
+
+    def keep_pattern_from_seq(self, pattern: int):
+        """
+        Removes all the other patterns different from 'pattern'.
+
+        :param pattern: The pattern index (within the song sequence) to be kept.
+        :return: None.
+        """
+
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        self.pattern_seq = [self.pattern_seq[pattern]]
+
+    def duplicate_pattern(self, pattern: int) -> int:
+        """
+        Creates a fresh copy of the given pattern, and appends it at the end of the song sequence.
+
+        :param pattern: The pattern index (within the song sequence) to be duplicated.
+        :return: The index of the new pattern.
+        """
+
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[pattern]]))
+        n = len(self.patterns) - 1
+        self.pattern_seq.append(n)
+
+        return n
+
+    '''
+    -------------------------------------
+    NOTES
+    -------------------------------------
+    '''
+
+    def write_note(self, pattern:int, channel: int, row: int, sample: int, period: str, effect: str = ""):
+        """
+        Writes a note in the given pattern, channel and row with the given sample.
         If no effect is given and the current note already has a speed effect, leaves it unchanged.
 
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param sample: The sample index to write.
         :param period: The note period (pitch) to write, e.g. "C-4".
         :param effect: The note effect, e.g. "ED1".
         :return: None.
         """
 
-        cur_efx = self.patterns[self.pattern_seq[self.current_pattern]].data[self.current_channel][self.current_row].effect
+        cur_efx = self.patterns[self.pattern_seq[pattern]].data[channel][row].effect
         if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
             effect = cur_efx
 
-        self.patterns[self.pattern_seq[self.current_pattern]].data[self.current_channel][self.current_row] = (
-            Note(self.current_sample, period, effect))
+        self.patterns[self.pattern_seq[pattern]].data[channel][row] = (
+            Note(sample, period, effect))
 
-    def write_effect(self, effect: str = ""):
+    '''
+    -------------------------------------
+    EFFECTS
+    -------------------------------------
+    '''
+
+    def write_effect(self, pattern: int, channel: int, row: int, effect: str = ""):
         """
-        Writes a given effect in the current pattern, channel and row.
+        Writes a given effect in the given pattern, channel and row.
         Does not touch the period or sample, if present.
 
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
         :param effect: The desired effect, e.g. "ED1".
         :return: None.
         """
 
-        self.patterns[self.pattern_seq[self.current_pattern]].data[self.current_channel][self.current_row].effect \
+        self.patterns[self.pattern_seq[pattern]].data[channel][row].effect \
             = effect

@@ -5,11 +5,13 @@ NodMOD is a Python library for manipulating Amiga MOD files produced with the mu
 The library simplifies core operations, abstracting away from the intricacies of the MOD format.
 
  * Load and save MOD files
- * Create, edit, and delete patterns
+ * Create, edit, duplicate, and delete patterns
  * Load WAV samples with automatic bitrate conversion
  * Full editing, down to the individual notes and effects
  * Render the song as WAV
- * Advanced composition functions (arpeggio, fade-in / fade-out, automated tuning, ...)
+
+Related repositories:
+ * AmiGen: https://github.com/erodola/amigen
 
 ## Install
 
@@ -30,9 +32,9 @@ In order to use the render to WAV functions, [ffmpeg](https://ffmpeg.org/downloa
 
 ## Music archive
 
-There are several sources of free MOD music tracks to play with.
+There are many sources of free MOD music tracks to play with.
 
-You can find several thousands at [The Mod Archive](https://modarchive.org/) or [Amiga Music Preservation](https://amp.dascene.net/), among others.
+You can find thousands of open-source songs at [The Mod Archive](https://modarchive.org/) or [Amiga Music Preservation](https://amp.dascene.net/), among others.
 
 ## How you can help
 
@@ -42,6 +44,6 @@ We seek to expand the library in several ways:
  * More advanced functions for composing music
  * Build a script language
  * Train a LLM to compose tracker modules
- * Improve its usability
+ * Improve usability
 
 Contributions are welcome through pull requests.
