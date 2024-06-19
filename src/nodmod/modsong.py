@@ -623,6 +623,7 @@ class MODSong(Song):
         """
 
         # TODO
+        raise NotImplementedError("Not implemented yet.")
         
         return 0.
         
