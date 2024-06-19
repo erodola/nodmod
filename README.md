@@ -1,6 +1,6 @@
 # 🎹 NodMOD
 
-NodMOD is a library for manipulating Amiga MOD files produced with the music trackers of yore.
+NodMOD is a Python library for manipulating Amiga MOD files produced with the music trackers of yore.
 
 The library simplifies core operations, abstracting away from the intricacies of the MOD format.
 
