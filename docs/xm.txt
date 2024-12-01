@@ -335,11 +335,11 @@ not get TOO large: Since the MSB in the note value is never used,
 it is used for the compression. If the bit is set, then the other
 bits are interpreted as follows:
 
-      bit 0 set: Note follows
-	  1 set: Instrument follows
-	  2 set: Volume column byte follows
-	  3 set: Effect follows
-          4 set: Effect parameter follows
+      bit   0 set: Note follows
+            1 set: Instrument follows
+            2 set: Volume column byte follows
+            3 set: Effect follows
+            4 set: Effect parameter follows
 
 It is very simple, but far from optimal. If you want to get better
 compression, you can always repack the patterns in your loader.

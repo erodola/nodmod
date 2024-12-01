@@ -102,6 +102,138 @@ class XMSong(Song):
             # Load pattern data
             # ----------------------------
 
+            def get_period(note_byte):
+
+                if note_byte & 0x80:
+                    raise NotImplementedError("The note has the MSB set.")
+            
+                note_val = note_byte & 0x7F
+
+                if note_val > 97:
+                    raise NotImplementedError("Invalid note value.")
+
+                if note_val == 0:
+                    period_ = ''  # no note
+                elif note_val == 97:
+                    period_ = 'off'  # note off, "==" in OpenMPT
+                else:
+                    period = self.PERIOD_SEQ[(note_val % len(self.PERIOD_SEQ)) - 1]
+                    octave = int(note_val / len(self.PERIOD_SEQ)) + 1
+                    period_ = f"{period}{octave}"
+
+                return period_
+
+            def get_instrument(instrument_byte):
+
+                if instrument_byte > 127:
+                    raise NotImplementedError("Invalid instrument value.")
+                            
+                return f"{instrument_byte:02d}"
+
+            def get_volume(volume_byte):
+
+                cmd_nibble = volume_byte & 0xF0
+                val_nibble = volume_byte & 0x0F
+
+                if cmd_nibble >= 0x00 and cmd_nibble <= 0x0F:
+                    raise NotImplementedError("Volume command does nothing")
+                if cmd_nibble >= 0x51 and cmd_nibble <= 0x5F:
+                    raise NotImplementedError("Volume command undefined")
+
+                if cmd_nibble >= 0x10 and cmd_nibble <= 0x1F:  # set volume
+                    volume_cmd = 'v'
+                    volume_val = val_nibble
+                elif cmd_nibble >= 0x20 and cmd_nibble <= 0x2F:
+                    volume_cmd = 'v'
+                    volume_val = val_nibble + 16
+                elif cmd_nibble >= 0x30 and cmd_nibble <= 0x3F:
+                    volume_cmd = 'v'
+                    volume_val = val_nibble + 32
+                elif cmd_nibble >= 0x40 and cmd_nibble <= 0x4F:
+                    volume_cmd = 'v'
+                    volume_val = val_nibble + 48
+                elif cmd_nibble == 0x50:
+                    volume_cmd = 'v'
+                    volume_val = 64
+
+                elif cmd_nibble >= 0x60 and cmd_nibble <= 0x6F:  # volume slide down
+                    volume_cmd = 'd'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0x70 and cmd_nibble <= 0x7F:  # volume slide up
+                    volume_cmd = 'c'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0x80 and cmd_nibble <= 0x8F:  # fine volume slide down
+                    volume_cmd = 'b'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0x90 and cmd_nibble <= 0x9F:  # fine volume slide up
+                    volume_cmd = 'a'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0xA0 and cmd_nibble <= 0xAF:  # vibrato speed
+                    volume_cmd = 'u'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0xB0 and cmd_nibble <= 0xBF:  # vibrato depth
+                    volume_cmd = 'h'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0xC0 and cmd_nibble <= 0xCF:  # set panning position
+                    volume_cmd = 'p'
+                    volume_val = val_nibble * 4
+
+                elif cmd_nibble >= 0xD0 and cmd_nibble <= 0xDF: # panning slide left
+                    volume_cmd = 'l'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0xE0 and cmd_nibble <= 0xEF: # panning slide right
+                    volume_cmd = 'r'
+                    volume_val = val_nibble
+
+                elif cmd_nibble >= 0xF0 and cmd_nibble <= 0xFF: # tone portamento
+                    volume_cmd = 'g'
+                    volume_val = val_nibble
+
+                return volume_cmd, volume_val
+
+            def get_efx_type(effect_byte):  #FIXME add effect X
+
+                if effect_byte <= 0x0D or effect_byte == 0x0F:
+                    efx = f"{effect_byte:01X}"
+
+                elif effect_byte == 0x0E:
+                    efx = "E"  # TODO: see how it's treated in .mod files
+
+                elif effect_byte == 0x10:
+                    efx = "G"
+
+                elif effect_byte == 0x11:
+                    efx = "H"
+
+                elif effect_byte == 0x15:
+                    efx = "L"
+
+                elif effect_byte == 0x19:
+                    efx = "P"
+
+                elif effect_byte == 0x1B:
+                    efx = "R"
+
+                elif effect_byte == 0x1D:
+                    efx = "T"
+
+                else:
+                    raise NotImplementedError(f"Invalid effect type {effect_byte:02X}.")
+
+                return efx
+
+            def get_efx_param(effect_param_byte):
+                #TODO how are efx E and X treated?
+                #TODO see * cases in xm.pdf
+                return effect_param_byte
+
             self.patterns = []
 
             pattern_data = data[336:]
@@ -129,167 +261,68 @@ class XMSong(Song):
 
                 pat = Pattern(n_rows, n_channels)
 
-                # notes are stored row-wise: first all notes across all channels for row 0, then row 1, etc.
+                # Read the pattern data byte by byte.
+                # Notes are stored row-wise: first all notes across all channels for row 0, then row 1, etc.
 
                 c = 0
                 r = 0
 
-                # read the pattern data byte by byte
                 byte_idx = cur_pat_idx + 9
                 while True:
 
                     packed_byte = pattern_data[byte_idx]
-                    # print(f"packed byte: {hex(packed_byte)}")
 
-                    note = '---'
-                    instrument = '--'
+                    instrument = ''
+                    effect = ''
+                    period = ''
                     volume_cmd = ''
-                    volume_val = 0
-                    efx = '---'
+                    volume_val = -1
 
-                    if packed_byte & 0x80:  # packed note because the MSB is set
+                    is_packed = packed_byte & 0x80  # MSB is set
 
-                        # ----------------------------
-                        # Note column
-                        # ----------------------------
+                    if is_packed:
                         if packed_byte & 0x01:
-                            
                             byte_idx += 1
-                            note_byte = pattern_data[byte_idx]
+                            period = get_period(pattern_data[byte_idx])
+                    elif not is_packed:
+                        period = get_period(packed_byte)
 
-                            if note_byte & 0x80:
-                                raise NotImplementedError("The note has the MSB set.")
-                            
-                            note_val = note_byte & 0x7F
+                    if period != '' and period != 'off':
+                        volume_cmd = 'v'
+                        volume_val = 64  # full volume, unless overwritten in the volume column
 
-                            if note_val > 97:
-                                raise NotImplementedError("Invalid note value.")
-
-                            if note_val == 0:
-                                note = '---'  # no note
-                            elif note_val == 97:
-                                note = '== '  # note off
-                            else:
-                                period = self.PERIOD_SEQ[(note_val % len(self.PERIOD_SEQ)) - 1]
-                                octave = int(note_val / len(self.PERIOD_SEQ)) + 1
-                                note = f"{period}{octave}"
-
-                                volume_cmd = 'v'
-                                volume_val = 64  # full volume
-
-                        # ----------------------------
-                        # Instrument column
-                        # ----------------------------
-                        if packed_byte & 0x02:
-                            
-                            byte_idx += 1
-                            instrument_byte = pattern_data[byte_idx]
-
-                            if instrument_byte > 127:
-                                raise NotImplementedError("Invalid instrument value.")
-                            
-                            instrument = f"{instrument_byte:02d}"
-
-                        # ----------------------------
-                        # Volume column
-                        # ----------------------------
-                        if packed_byte & 0x04:
-
-                            byte_idx += 1
-                            volume_byte = pattern_data[byte_idx]
-
-                            cmd_nibble = volume_byte & 0xF0
-                            val_nibble = volume_byte & 0x0F
-
-                            if cmd_nibble >= 0x00 and cmd_nibble <= 0x0F:
-                                raise NotImplementedError("Volume command does nothing")
-                            if cmd_nibble >= 0x51 and cmd_nibble <= 0x5F:
-                                raise NotImplementedError("Volume command undefined")
-
-                            if cmd_nibble >= 0x10 and cmd_nibble <= 0x1F:  # set volume
-                                volume_cmd = 'v'
-                                volume_val = val_nibble
-                            elif cmd_nibble >= 0x20 and cmd_nibble <= 0x2F:
-                                volume_cmd = 'v'
-                                volume_val = val_nibble + 16
-                            elif cmd_nibble >= 0x30 and cmd_nibble <= 0x3F:
-                                volume_cmd = 'v'
-                                volume_val = val_nibble + 32
-                            elif cmd_nibble >= 0x40 and cmd_nibble <= 0x4F:
-                                volume_cmd = 'v'
-                                volume_val = val_nibble + 48
-                            elif cmd_nibble == 0x50:
-                                volume_cmd = 'v'
-                                volume_val = 64
-
-                            elif cmd_nibble >= 0x60 and cmd_nibble <= 0x6F:  # volume slide down
-                                volume_cmd = 'd'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0x70 and cmd_nibble <= 0x7F:  # volume slide up
-                                volume_cmd = 'c'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0x80 and cmd_nibble <= 0x8F:  # fine volume slide down
-                                volume_cmd = 'b'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0x90 and cmd_nibble <= 0x9F:  # fine volume slide up
-                                volume_cmd = 'a'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0xA0 and cmd_nibble <= 0xAF:  # vibrato speed
-                                volume_cmd = 'u'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0xB0 and cmd_nibble <= 0xBF:  # vibrato depth
-                                volume_cmd = 'h'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0xC0 and cmd_nibble <= 0xCF:  # set panning position
-                                volume_cmd = 'p'
-                                volume_val = val_nibble  # FIXME
-
-                            elif cmd_nibble >= 0xD0 and cmd_nibble <= 0xDF: # panning slide left
-                                volume_cmd = 'l'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0xE0 and cmd_nibble <= 0xEF: # panning slide right
-                                volume_cmd = 'r'
-                                volume_val = val_nibble
-
-                            elif cmd_nibble >= 0xF0 and cmd_nibble <= 0xFF: # tone portamento
-                                volume_cmd = 'g'
-                                volume_val = val_nibble
-
-                        # ----------------------------
-                        # Effect column TODO
-                        # ----------------------------
-                        if packed_byte & 0x08:
-                            
-                            byte_idx += 1
-                            effect_byte = pattern_data[byte_idx]
-
-                            print("Effect type: ", hex(effect_byte))
-
-                        # ----------------------------
-                        # Effect parameter column
-                        # ----------------------------
-                        if packed_byte & 0x10:
-                            
-                            byte_idx += 1
-                            effect_param_byte = pattern_data[byte_idx]
-
-                            efx = f"{efx}{effect_param_byte:02X}"
-                        
-                        # move to the next note (next channel or row)
+                    if not is_packed or (is_packed and packed_byte & 0x02):
                         byte_idx += 1
+                        instrument = get_instrument(pattern_data[byte_idx])
 
-                        print(f"{note} {instrument} {volume_cmd}{volume_val:02d} {efx} | ", end='')
+                    if not is_packed or (is_packed and packed_byte & 0x04):
+                        byte_idx += 1
+                        volume_cmd, volume_val = get_volume(pattern_data[byte_idx])
 
-                    else:  #TODO: unpacked note, because the MSB is 0
-                        print("unpacked note, not yet implemented")
-                        byte_idx += 5  # advance by 5 bytes to move to the next note
+                    if not is_packed or (is_packed and packed_byte & 0x08):
+                        byte_idx += 1
+                        effect = get_efx_type(pattern_data[byte_idx])
+
+                    if not is_packed or (is_packed and packed_byte & 0x10):
+                        byte_idx += 1
+                        effect = f"{effect}{get_efx_param(pattern_data[byte_idx]):02X}"
+
+                    # move to the next note (next channel or row)
+                    byte_idx += 1
+
+                    # pretty print
+                    if period == '':
+                        print('--- ', end='')
+                    elif period == 'off':
+                        print('==  ', end='')
+                    else:
+                        print(f"{period} ", end='')
+                    print(f"{'--' if instrument=='' else instrument} {'-' if volume_cmd=='' else volume_cmd}", end='')
+                    if volume_val == -1:
+                        print('-- ', end='')
+                    else:
+                        print(f"{volume_val:02d} ", end='')
+                    print(f"{'---' if effect=='' else effect} | ", end='')
 
                     c += 1  # move to the next channel
                     if c == n_channels:
@@ -298,12 +331,21 @@ class XMSong(Song):
                         print("")
 
                     if byte_idx == cur_pat_idx + 9 + pattern_data_size:
+
+                        print("siamo qui")
+
+                        # FIXME: redefine note class for MOD and XM
+                        note = Note()
+
+                        note.period = period
+                        note.volume = volume_val
+                        note.volume_cmd = volume_cmd
+                        note.efx = effect
+                        note.sample_idx = instrument
+
+                        # TODO: add note to the Pattern
+
                         break  # next pattern
-
-        #                 note = Note()
-
-        #                 note.sample_idx = MODSong.get_sample_from_note(note_raw)
-        #                 note.period = MODSong.get_period_from_note(note_raw)
 
         #                 e_type, e_param = MODSong.get_effect_from_note(note_raw)
 
