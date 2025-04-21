@@ -179,7 +179,7 @@ class MODSong(Song):
 
                         note = Note()
 
-                        note.sample_idx = MODSong.get_sample_from_note(note_raw)
+                        note.instrument_idx = MODSong.get_sample_from_note(note_raw)
                         note.period = MODSong.get_period_from_note(note_raw)
 
                         e_type, e_param = MODSong.get_effect_from_note(note_raw)
@@ -329,9 +329,9 @@ class MODSong(Song):
                         pd = 0
 
                     note_raw = bytearray(4)
-                    note_raw[0] = (note.sample_idx & 0xF0) | ((pd & 0xF00) >> 8)
+                    note_raw[0] = (note.instrument_idx & 0xF0) | ((pd & 0xF00) >> 8)
                     note_raw[1] = pd & 0xFF
-                    note_raw[2] = ((note.sample_idx & 0x0F) << 4) | efx_type
+                    note_raw[2] = ((note.instrument_idx & 0x0F) << 4) | efx_type
                     note_raw[3] = efx_param
 
                     data += note_raw

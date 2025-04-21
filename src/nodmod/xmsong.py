@@ -307,9 +307,6 @@ class XMSong(Song):
                         byte_idx += 1
                         effect = f"{effect}{get_efx_param(pattern_data[byte_idx]):02X}"
 
-                    # move to the next note (next channel or row)
-                    byte_idx += 1
-
                     # pretty print
                     if period == '':
                         print('--- ', end='')
@@ -324,28 +321,16 @@ class XMSong(Song):
                         print(f"{volume_val:02d} ", end='')
                     print(f"{'---' if effect=='' else effect} | ", end='')
 
-                    c += 1  # move to the next channel
-                    if c == n_channels:
-                        c = 0
-                        r += 1
-                        print("")
+                    # FIXME: redefine note class for MOD and XM
+                    note = Note()
 
-                    if byte_idx == cur_pat_idx + 9 + pattern_data_size:
+                    note.instrument_idx = instrument
+                    note.period = period
 
-                        print("siamo qui")
-
-                        # FIXME: redefine note class for MOD and XM
-                        note = Note()
-
-                        note.period = period
-                        note.volume = volume_val
-                        note.volume_cmd = volume_cmd
-                        note.efx = effect
-                        note.sample_idx = instrument
-
-                        # TODO: add note to the Pattern
-
-                        break  # next pattern
+                    # TODO
+                    # note.effect = effect
+                    # note.volume = volume_val
+                    # note.volume_cmd = volume_cmd
 
         #                 e_type, e_param = MODSong.get_effect_from_note(note_raw)
 
@@ -358,8 +343,20 @@ class XMSong(Song):
                             
         #                     if e_type == 0:  # arpeggio effect
         #                         note.effect = "0" + note.effect
+                    
+                    pat.data[c][r] = note
 
-        #                 pat.data[c][r] = note
+                    # move to the next note (next channel or row)
+                    byte_idx += 1
+
+                    c += 1  # move to the next channel
+                    if c == n_channels:
+                        c = 0
+                        r += 1
+                        print("")
+
+                    if byte_idx == cur_pat_idx + 9 + pattern_data_size:
+                        break  # next pattern
 
                 self.patterns.append(pat)
 
