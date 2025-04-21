@@ -51,7 +51,7 @@ class Note:
         self.period = period
         self.effect = effect
 
-    def __str__(self):
+    def __repr__(self):
         s = ''
         if self.period == '':
             s += '--- '
