@@ -54,7 +54,7 @@ class Note:
         self.period = period
         self.effect = effect
 
-    def __str__(self):
+    def __repr__(self):
         s = ''
         if self.period == '':
             s += '--- '
@@ -196,7 +196,7 @@ class Song(ABC):
 
         self.pattern_seq = self.pattern_seq[:pattern + 1]
 
-    def remove_pattern_from_seq(self, pattern: int):
+    def remove_pattern_from_seq(self, pattern: int) -> None:
         """
         Removes a specified pattern from the song sequence.
 
@@ -206,22 +206,29 @@ class Song(ABC):
         - The new sequence is 2, 14, 1, 0, 17
 
         :param pattern: The pattern index (within the song sequence) to be removed.
-        :return: None.
         """
-
         if pattern < 0 or pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
         self.pattern_seq = self.pattern_seq[:pattern] + self.pattern_seq[pattern + 1:]
 
-    def keep_pattern_from_seq(self, pattern: int):
+    def remove_all_patterns(self, sequence_only: bool) -> None:
+        """
+        Removes all patterns from the song sequence.
+
+        :param sequence_only: If True, only the song sequence is cleared. The patterns are kept.
+        """
+        self.pattern_seq = []
+
+        if not sequence_only:
+            self.patterns = []
+
+    def keep_pattern_from_seq(self, pattern: int) -> None:
         """
         Removes all the other patterns different from 'pattern'.
 
         :param pattern: The pattern index (within the song sequence) to be kept.
-        :return: None.
         """
-
         if pattern < 0 or pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
@@ -234,7 +241,6 @@ class Song(ABC):
         :param pattern: The pattern index (within the song sequence) to be duplicated.
         :return: The index of the new pattern.
         """
-
         if pattern < 0 or pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 

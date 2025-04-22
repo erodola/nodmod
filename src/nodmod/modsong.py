@@ -1,3 +1,4 @@
+from __future__ import annotations
 from nodmod.song import Song
 from nodmod.song import Sample
 from nodmod.song import Pattern
@@ -42,12 +43,22 @@ class MODSong(Song):
         Initializes the song with one empty pattern and an empty sample bank.
         This way, the song can be immediately saved as a valid module file.
         """
-
         super().__init__()
 
         self.patterns = [Pattern(n_rows=MODSong.ROWS, n_channels=MODSong.CHANNELS)]
         self.pattern_seq = [0]
         self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
+
+    def copy(self) -> MODSong:  # TODO check if this actually works
+        
+        new_song = MODSong()
+        new_song.artist = self.artist
+        new_song.songname = self.songname
+        new_song.patterns = copy.deepcopy(self.patterns)
+        new_song.pattern_seq = copy.deepcopy(self.pattern_seq)
+        new_song.samples = copy.deepcopy(self.samples)
+
+        return new_song
 
     '''
     -------------------------------------
@@ -588,11 +599,11 @@ class MODSong(Song):
     def clear_pattern(self, pattern: int):
         """
         Clears completely a specified pattern.
+        The pattern is not removed from the song sequence, but all the notes are set to empty.
 
         :param pattern: The pattern index (within the song sequence) to be cleared.
         :return: None.
         """
-
         if pattern < 0 or pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
@@ -607,7 +618,6 @@ class MODSong(Song):
 
         :return: The index of the new pattern.
         """
-
         self.patterns.append(Pattern(MODSong.ROWS, MODSong.CHANNELS))
         n = len(self.patterns) - 1
         self.pattern_seq.append(n)
