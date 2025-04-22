@@ -42,12 +42,15 @@ class Sample:
 
 class Note:
     """
-    A note is a sample that is played at a specific pitch (period).
-    Every note can carry a particular effect.
+    A note is a sample that is played at a specific pitch (period), possibly with envelopes.
+    Every note can be modified by effects.
     """
 
-    def __init__(self, sample_idx: int = 0, period: str = '', effect: str = ''):
-        self.sample_idx = sample_idx
+    def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = ''):
+
+        # note that for mod files, instrument and sample are synonymous
+        self.instrument_idx = instrument_idx
+
         self.period = period
         self.effect = effect
 
@@ -57,10 +60,10 @@ class Note:
             s += '--- '
         else:
             s += self.period + ' '
-        if self.sample_idx == 0:
+        if self.instrument_idx == 0:
             s += '-- '
         else:
-            s += f"{self.sample_idx:02d}" + ' '
+            s += f"{self.instrument_idx:02d}" + ' '
         if self.effect == '':
             s += '---'
         else:
@@ -68,7 +71,7 @@ class Note:
         return s
     
     def is_empty(self) -> bool:
-        return self.sample_idx == 0 and self.period == '' and self.effect == ''
+        return self.instrument_idx == 0 and self.period == '' and self.effect == ''
 
 
 class Song(ABC):
