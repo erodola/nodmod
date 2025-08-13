@@ -1,8 +1,8 @@
 from __future__ import annotations
-from nodmod.song import Song
-from nodmod.song import Sample
-from nodmod.song import Pattern
-from nodmod.song import Note
+from nodmod import Song
+from nodmod import Sample
+from nodmod import Pattern
+from nodmod import Note
 import array
 import os
 import subprocess
