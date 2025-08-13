@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nodmod"
+version = "0.1.0"
+description = "Read, edit, and write .MOD music files"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Emanuele Rodolà", email = "rodola@di.uniroma1.it"}
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pydub>=0.25.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

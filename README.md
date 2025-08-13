@@ -10,9 +10,6 @@ The library simplifies core operations, abstracting away from the intricacies of
  * Full editing, down to the individual notes and effects
  * Render the song as WAV
 
-Related repositories:
- * AmiGen: https://github.com/erodola/amigen
-
 ## Install
 
 Tested with Python 3.11.
