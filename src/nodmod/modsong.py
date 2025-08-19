@@ -699,7 +699,7 @@ class MODSong(Song):
     def clear_channel(self, channel: int):
         """
         Clears completely a specified channel in the entire song.
-        WARNING: If you use this as a way to mute a channel, be careful because it also deletes global effects like bpm.
+        WARNING: Don't use this as a way to mute channels, as it also removes global effects.
 
         :param channel: The channel index to mute, 1 to 4.
         :return: None.
@@ -711,6 +711,39 @@ class MODSong(Song):
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
                 self.patterns[p].data[channel - 1][r] = Note()
+
+    def mute_channel(self, channel: int):
+        """
+        Mutes a specified channel in the entire song while preserving global effects.
+        This clears notes, instruments, and channel-specific effects but keeps global effects
+        like speed/BPM changes (Fxx), pattern breaks (Bxx), and position jumps (Dxx).
+
+        :param channel: The channel index to mute, 1 to 4.
+        :return: None.
+        """
+
+        if channel <= 0 or channel > MODSong.CHANNELS:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        for p in range(len(self.patterns)):
+            for r in range(MODSong.ROWS):
+                note = self.patterns[p].data[channel - 1][r]
+                
+                # Check if this note has a global effect that should be preserved
+                global_effect = ""
+                if note.effect != "":
+                    effect_type = note.effect[0]
+                    # Preserve global effects: F (speed/BPM), B (pattern break), D (position jump)
+                    if effect_type in ['F', 'B', 'D']:
+                        global_effect = note.effect
+                
+                # Create a new empty note
+                new_note = Note()
+                # Restore the global effect if there was one
+                if global_effect:
+                    new_note.effect = global_effect
+                
+                self.patterns[p].data[channel - 1][r] = new_note
 
     '''
     -------------------------------------
