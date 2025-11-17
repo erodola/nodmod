@@ -374,7 +374,6 @@ class MODSong(Song):
         :param cleanup: True to remove the temporary MOD file generated for rendering.
         :return: None.
         """
-
         if verbose:
             print("Rendering as wav... ", end='', flush=True)
 
@@ -525,7 +524,6 @@ class MODSong(Song):
                  - the index of the added sample, from 1 to 31
                  - the corresponding sample object
         """
-
         if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}.")
         
@@ -546,6 +544,57 @@ class MODSong(Song):
         self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
 
         return sample_idx, self.samples[sample_idx - 1]
+    
+    def save_sample(self, sample_idx: int, fname: str, reference_period: int = 428):
+        """
+        Saves the sample at the given index as a WAV file.
+        The WAV file will be saved at a sample rate such that when played back at 44100 Hz,
+        it will sound at the correct pitch corresponding to the reference period.
+
+        :param sample_idx: The sample index to save, 1 to 31.
+        :param fname: The complete file path to the output .wav file.
+        :param reference_period: The period to use as reference pitch (default 428 = C-5).
+        :return: None.
+        """
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
+
+        smp = self.samples[sample_idx - 1]
+
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+
+        # Amiga PAL clock frequency
+        PAL_CLOCK = 7093789.2
+        
+        # calculate the base frequency for the reference period.
+        # frequency = PAL_CLOCK / (period * 2)
+        base_freq = PAL_CLOCK / (reference_period * 2)
+        
+        # account for finetune (-8 to +7, stored as 0-15).
+        # finetune shifts the pitch by 1/8 of a semitone per unit
+        finetune = smp.finetune
+        if finetune > 7:  # Convert from 0-15 to -8 to +7
+            finetune = finetune - 16
+        
+        # each finetune unit is 1/8 of a semitone
+        # 2^(finetune / (8 * 12)) gives the frequency multiplier
+        finetune_multiplier = 2 ** (finetune / 96.0)
+        
+        # calculate the effective sample rate
+        effective_sample_rate = int(base_freq * finetune_multiplier)
+        
+        audio = pydub.AudioSegment(
+            data=smp.waveform.tobytes(),
+            sample_width=1,
+            frame_rate=effective_sample_rate,
+            channels=1
+        )
+        
+        # export at standard 44100 Hz (pydub will resample automatically)
+        audio = audio.set_frame_rate(44100)
+        
+        audio.export(fname, format="wav")
 
     def get_sample(self, sample_idx: int) -> Sample:
         """
@@ -554,7 +603,6 @@ class MODSong(Song):
         :param sample_idx: The sample index to retrieve, 1 to 31.
         :return: The sample object.
         """
-
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}")
 
@@ -568,7 +616,6 @@ class MODSong(Song):
         :param sample_idx: The sample index to remove, 1 to 31.
         :return: None.
         """
-
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}")
 
@@ -582,7 +629,6 @@ class MODSong(Song):
         :param sample_idx: The sample index to be kept, 1 to 31.
         :return: None.
         """
-
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}")
 
@@ -653,7 +699,6 @@ class MODSong(Song):
         if pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
-        effective_rows = 0
         loop_start_row = 0  # used by E6x effect
 
         data = copy.deepcopy(self.patterns[self.pattern_seq[pattern]].data)
@@ -704,7 +749,6 @@ class MODSong(Song):
         :param channel: The channel index to mute, 1 to 4.
         :return: None.
         """
-
         if channel <= 0 or channel > MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel}")
 
@@ -721,7 +765,6 @@ class MODSong(Song):
         :param channel: The channel index to mute, 1 to 4.
         :return: None.
         """
-
         if channel <= 0 or channel > MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel}")
 
@@ -759,7 +802,6 @@ class MODSong(Song):
         :param note: A 4-byte note.
         :return: The sample number.
         """
-
         u4 = note[0] & 0xF0  # upper 4 bits of sample number
         l4 = note[2] & 0xF0  # lower 4 bits
         return u4 | (l4 >> 4)
@@ -773,7 +815,6 @@ class MODSong(Song):
         :param note: A 4-byte note.
         :return: A tuple (int, int) containing the effect type and parameter.
         """
-
         return note[2] & 0x0F, note[3]
 
     @staticmethod
@@ -784,7 +825,6 @@ class MODSong(Song):
         :param note: A 4-byte note.
         :return: The note period (pitch), or an empty string if no pitch is specified.
         """
-
         period_raw = ((note[0] & 0x0F) << 8) | note[1]
         if period_raw != 0:
             return MODSong.PERIOD_TABLE[period_raw]
