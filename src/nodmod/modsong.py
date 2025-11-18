@@ -17,6 +17,7 @@ class MODSong(Song):
     CHANNELS = 4
     SAMPLES = 31
     PATTERN_SIZE = ROWS * CHANNELS * 4
+    PAL_CLOCK = 7093789.2  # Hz
 
     # OpenMPT period table for Tuning 0, Normal
     PERIOD_TABLE = {
@@ -545,31 +546,18 @@ class MODSong(Song):
 
         return sample_idx, self.samples[sample_idx - 1]
     
-    def save_sample(self, sample_idx: int, fname: str, reference_period: int = 428):
+    def _get_effective_sample_rate(self, smp: Sample, period: str = "C-5") -> int:
         """
-        Saves the sample at the given index as a WAV file.
-        The WAV file will be saved at a sample rate such that when played back at 44100 Hz,
-        it will sound at the correct pitch corresponding to the reference period.
+        Returns the effective sample rate of the given sample based on its finetune value
+        and the reference period.
 
-        :param sample_idx: The sample index to save, 1 to 31.
-        :param fname: The complete file path to the output .wav file.
-        :param reference_period: The period to use as reference pitch (default 428 = C-5).
-        :return: None.
+        :param smp: The sample object.
+        :param period: The period to use as reference pitch (default "C-5").
+        :return: The effective sample rate in Hz.
         """
-        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
-
-        smp = self.samples[sample_idx - 1]
-
-        if len(smp.waveform) == 0:
-            raise ValueError(f"Sample {sample_idx} has no waveform data")
-
-        # Amiga PAL clock frequency
-        PAL_CLOCK = 7093789.2
-        
         # calculate the base frequency for the reference period.
         # frequency = PAL_CLOCK / (period * 2)
-        base_freq = PAL_CLOCK / (reference_period * 2)
+        base_freq = MODSong.PAL_CLOCK / (MODSong.INV_PERIOD_TABLE[period] * 2)
         
         # account for finetune (-8 to +7, stored as 0-15).
         # finetune shifts the pitch by 1/8 of a semitone per unit
@@ -583,6 +571,52 @@ class MODSong(Song):
         
         # calculate the effective sample rate
         effective_sample_rate = int(base_freq * finetune_multiplier)
+
+        return effective_sample_rate
+    
+    def get_sample_duration(self, sample_idx: int, period: str = "C-5") -> float:
+        """
+        Returns the duration of the sample at the given index in seconds.
+        The duration is computed based on the effective sample rate, which depends on the finetune value
+        and the reference period.
+
+        :param sample_idx: The sample index to query, 1 to 31.
+        :param period: The period to use as reference pitch (default "C-5").
+        :return: The sample duration in seconds.
+        """
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
+
+        smp = self.samples[sample_idx - 1]
+
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+        
+        effective_sample_rate = self._get_effective_sample_rate(smp, period)
+        duration = len(smp.waveform) / effective_sample_rate
+
+        return duration
+
+    def save_sample(self, sample_idx: int, fname: str, period: str = "C-5"):
+        """
+        Saves the sample at the given index as a WAV file.
+        The WAV file will be saved at a sample rate such that when played back at 44100 Hz,
+        it will sound at the correct pitch corresponding to the reference period.
+
+        :param sample_idx: The sample index to save, 1 to 31.
+        :param fname: The complete file path to the output .wav file.
+        :param period: The period to use as reference pitch (default "C-5").
+        :return: None.
+        """
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
+
+        smp = self.samples[sample_idx - 1]
+
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+        
+        effective_sample_rate = self._get_effective_sample_rate(smp, period)
         
         audio = pydub.AudioSegment(
             data=smp.waveform.tobytes(),
