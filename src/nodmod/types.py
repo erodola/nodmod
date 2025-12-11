@@ -176,6 +176,9 @@ class XMSample(Sample):
         self.relative_note = 0   # Signed: -96 to +95, 0 = C-4 plays as C-4
         self.is_16bit = False    # True for 16-bit samples
         
+        # Internal: reserved byte for byte-perfect round-trip (users can ignore, default 0 is correct)
+        self._reserved: int = 0
+        
         # Waveform: 8-bit uses 'b' (signed byte), 16-bit uses 'h' (signed short)
         # Default to 8-bit, changed when loading 16-bit samples
         self.waveform = array.array('b')
@@ -203,6 +206,12 @@ class Instrument:
 
     def __init__(self):
         self.name = ""
+        
+        # --- Internal fields for byte-perfect round-trip (users can ignore these) ---
+        # Instrument type byte: officially "always 0", default 0 is correct for new instruments
+        self._type: int = 0
+        # Original header size: 0 means "use standard size" (29 for empty, 263 for non-empty)
+        self._header_size: int = 0
         
         # List of Sample objects belonging to this instrument
         self.samples: list[Sample] = []

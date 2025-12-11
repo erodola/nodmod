@@ -119,23 +119,396 @@ class XMSong(Song):
         """
         Saves the song as a standard XM file.
         
-        Note: Full XM writing is not yet implemented. This method copies the
-        original source file if available.
-        
         :param fname: Complete file path.
         :param verbose: False for silent saving.
         :return: None.
         """
-        if self._source_file is None:
-            raise NotImplementedError(
-                "XM file writing is not yet implemented. "
-                "Can only save XM files that were loaded from disk."
-            )
-        
         if verbose:
             print(f'Saving to {fname}... ', end='', flush=True)
+
+        data = bytearray()
+
+        def str_to_bytes_padded(s: str, max_len: int, encoding: str = 'latin-1', pad: int = 0x00) -> bytes:
+            """Convert string to bytes, truncating or padding as needed."""
+            r = bytes(s, encoding)
+            if len(r) > max_len:
+                r = r[:max_len]
+            else:
+                r += bytes([pad] * (max_len - len(r)))
+            return r
+
+        def period_to_note_byte(period: str) -> int:
+            """Convert period string (e.g., 'C-5', 'off', '') to XM note byte."""
+            if period == '':
+                return 0
+            if period == 'off':
+                return 97
+            # Parse note like "C-5", "C#4", etc.
+            # XM notes: 1=C-1, 2=C#1, ..., 12=B-1, 13=C-2, ...
+            note_name = period[:2]  # e.g., "C-", "C#"
+            octave = int(period[2:])  # e.g., 5
+            note_idx = self.PERIOD_SEQ.index(note_name)  # 0-based: C-=0, C#=1, ..., B-=11
+            return note_idx + (octave - 1) * 12 + 1
+
+        def volume_to_byte(vol_cmd: str, vol_val: int) -> int:
+            """Convert volume command and value to XM volume byte."""
+            if vol_cmd == '':
+                return 0
+            if vol_cmd == 'v':
+                # Set volume: 0x10-0x50 for values 0-64
+                if vol_val <= 15:
+                    return 0x10 + vol_val
+                elif vol_val <= 31:
+                    return 0x20 + (vol_val - 16)
+                elif vol_val <= 47:
+                    return 0x30 + (vol_val - 32)
+                elif vol_val <= 63:
+                    return 0x40 + (vol_val - 48)
+                else:  # 64
+                    return 0x50
+            elif vol_cmd == 'd':  # volume slide down
+                return 0x60 + vol_val
+            elif vol_cmd == 'c':  # volume slide up
+                return 0x70 + vol_val
+            elif vol_cmd == 'b':  # fine volume slide down
+                return 0x80 + vol_val
+            elif vol_cmd == 'a':  # fine volume slide up
+                return 0x90 + vol_val
+            elif vol_cmd == 'u':  # vibrato speed
+                return 0xA0 + vol_val
+            elif vol_cmd == 'h':  # vibrato depth
+                return 0xB0 + vol_val
+            elif vol_cmd == 'p':  # set panning
+                return 0xC0 + (vol_val // 4)
+            elif vol_cmd == 'l':  # panning slide left
+                return 0xD0 + vol_val
+            elif vol_cmd == 'r':  # panning slide right
+                return 0xE0 + vol_val
+            elif vol_cmd == 'g':  # tone portamento
+                return 0xF0 + vol_val
+            return 0
+
+        def effect_to_bytes(effect: str) -> tuple[int, int]:
+            """Convert effect string (e.g., 'A00', 'E12') to (effect_type, effect_param) bytes."""
+            if effect == '':
+                return 0, 0
+            
+            effect_char = effect[0]
+            param_str = effect[1:] if len(effect) > 1 else '00'
+            
+            # Map effect character to effect type byte
+            if effect_char.isdigit() or effect_char in 'ABCDF':
+                effect_type = int(effect_char, 16)
+            elif effect_char == 'E':
+                effect_type = 0x0E
+            elif effect_char == 'G':
+                effect_type = 0x10
+            elif effect_char == 'H':
+                effect_type = 0x11
+            elif effect_char == 'L':
+                effect_type = 0x15
+            elif effect_char == 'P':
+                effect_type = 0x19
+            elif effect_char == 'R':
+                effect_type = 0x1B
+            elif effect_char == 'T':
+                effect_type = 0x1D
+            elif effect_char == 'X':
+                effect_type = 0x21
+            else:
+                effect_type = 0
+            
+            # Parse parameter
+            effect_param = int(param_str, 16) if param_str else 0
+            
+            return effect_type, effect_param
+
+        # ----------------------------
+        # Write XM header (60 bytes fixed + variable part)
+        # ----------------------------
+
+        # ID text (17 bytes)
+        data += b'Extended Module: '
         
-        shutil.copy2(self._source_file, fname)
+        # Module name (20 bytes, space-padded)
+        data += str_to_bytes_padded(self.songname, 20, pad=0x20)
+        
+        # Always 0x1A
+        data += bytes([0x1A])
+        
+        # Tracker name (20 bytes, space-padded)
+        data += str_to_bytes_padded(self.tracker_name, 20, pad=0x20)
+        
+        # Version (2 bytes, little-endian: 0x0104 stored as 04 01)
+        data += bytes([0x04, 0x01])
+        
+        # --- Variable header starts here (offset 60) ---
+        
+        # Header size (4 bytes) - size from this offset, which is 20 + 256 = 276
+        header_size = 276
+        data += header_size.to_bytes(4, byteorder='little')
+        
+        # Song length in pattern order table (2 bytes)
+        data += len(self.pattern_seq).to_bytes(2, byteorder='little')
+        
+        # Restart position (2 bytes)
+        data += self.song_restart.to_bytes(2, byteorder='little')
+        
+        # Number of channels (2 bytes)
+        data += self.n_channels.to_bytes(2, byteorder='little')
+        
+        # Number of patterns (2 bytes)
+        data += len(self.patterns).to_bytes(2, byteorder='little')
+        
+        # Number of instruments (2 bytes)
+        data += self.n_instruments.to_bytes(2, byteorder='little')
+        
+        # Flags (2 bytes)
+        data += self.flags.to_bytes(2, byteorder='little')
+        
+        # Default speed (2 bytes)
+        data += self.default_speed.to_bytes(2, byteorder='little')
+        
+        # Default tempo (2 bytes)
+        data += self.default_tempo.to_bytes(2, byteorder='little')
+        
+        # Pattern order table (256 bytes)
+        pattern_order = bytearray(256)
+        for i, p in enumerate(self.pattern_seq):
+            if i < 256:
+                pattern_order[i] = p
+        data += pattern_order
+        
+        # ----------------------------
+        # Write pattern data
+        # ----------------------------
+        
+        for pat in self.patterns:
+            # Pack pattern data first to know the size
+            packed_pattern = bytearray()
+            
+            for r in range(pat.n_rows):
+                for c in range(pat.n_channels):
+                    note = pat.data[c][r]
+                    
+                    note_byte = period_to_note_byte(note.period)
+                    inst_byte = note.instrument_idx
+                    vol_byte = volume_to_byte(note.vol_cmd, note.vol_val)
+                    efx_type, efx_param = effect_to_bytes(note.effect)
+                    
+                    # Determine which fields are present (for packing)
+                    has_note = note_byte != 0
+                    has_inst = inst_byte != 0
+                    has_vol = vol_byte != 0
+                    has_efx = efx_type != 0
+                    has_param = efx_param != 0
+                    
+                    # Decide whether to use packed or unpacked format
+                    # Unpacked (5 bytes): write note, inst, vol, efx, param directly
+                    # - Only valid when note_byte < 0x80 (otherwise conflicts with packed marker)
+                    # - Makes sense when all 5 fields are non-zero
+                    # Packed (1 + N bytes): write pack_byte followed by present fields
+                    # - Saves space when some fields are zero
+                    
+                    all_fields_present = has_note and has_inst and has_vol and has_efx and has_param
+                    can_use_unpacked = note_byte > 0 and note_byte < 0x80
+                    
+                    if all_fields_present and can_use_unpacked:
+                        # Use unpacked format (5 bytes)
+                        packed_pattern.append(note_byte)
+                        packed_pattern.append(inst_byte)
+                        packed_pattern.append(vol_byte)
+                        packed_pattern.append(efx_type)
+                        packed_pattern.append(efx_param)
+                    else:
+                        # Use packed format
+                        pack_byte = 0x80
+                        if has_note:
+                            pack_byte |= 0x01
+                        if has_inst:
+                            pack_byte |= 0x02
+                        if has_vol:
+                            pack_byte |= 0x04
+                        if has_efx:
+                            pack_byte |= 0x08
+                        if has_param:
+                            pack_byte |= 0x10
+                        
+                        packed_pattern.append(pack_byte)
+                        if has_note:
+                            packed_pattern.append(note_byte)
+                        if has_inst:
+                            packed_pattern.append(inst_byte)
+                        if has_vol:
+                            packed_pattern.append(vol_byte)
+                        if has_efx:
+                            packed_pattern.append(efx_type)
+                        if has_param:
+                            packed_pattern.append(efx_param)
+            
+            # Pattern header (9 bytes)
+            data += (9).to_bytes(4, byteorder='little')  # Pattern header length
+            data += bytes([0])  # Packing type (always 0)
+            data += pat.n_rows.to_bytes(2, byteorder='little')  # Number of rows
+            data += len(packed_pattern).to_bytes(2, byteorder='little')  # Packed data size
+            
+            # Pattern data
+            data += packed_pattern
+        
+        # ----------------------------
+        # Write instrument data
+        # ----------------------------
+        
+        for inst in self.instruments:
+            n_samples = len(inst.samples)
+            
+            if n_samples == 0:
+                # Empty instrument: use stored header size for round-trip, default 29
+                inst_header_size = inst._header_size if inst._header_size > 0 else 29
+                data += inst_header_size.to_bytes(4, byteorder='little')
+                data += str_to_bytes_padded(inst.name, 22)
+                data += bytes([inst._type])  # Instrument type
+                data += (0).to_bytes(2, byteorder='little')  # Number of samples
+                # If original header was larger than 29, pad with zeros (or the sample header size)
+                extra_bytes = inst_header_size - 29
+                if extra_bytes > 0:
+                    # Usually this is the sample header size field (4 bytes = 0x28000000 = 40)
+                    data += (40).to_bytes(4, byteorder='little')
+                    extra_bytes -= 4
+                    if extra_bytes > 0:
+                        data += bytes(extra_bytes)
+            else:
+                # Full instrument header (263 bytes typical)
+                # Header size covers up to (but not including) sample headers
+                inst_header_size = 263
+                data += inst_header_size.to_bytes(4, byteorder='little')
+                data += str_to_bytes_padded(inst.name, 22)
+                data += bytes([inst._type])  # Instrument type
+                data += n_samples.to_bytes(2, byteorder='little')
+                
+                # Extended header (234 bytes)
+                sample_header_size = 40
+                data += sample_header_size.to_bytes(4, byteorder='little')
+                
+                # Sample map (96 bytes)
+                sample_map = bytearray(96)
+                for i, s in enumerate(inst.sample_map[:96]):
+                    sample_map[i] = s
+                data += sample_map
+                
+                # Volume envelope (48 bytes = 12 points * 4 bytes each)
+                vol_env_data = bytearray(48)
+                for i, point in enumerate(inst.volume_envelope[:12]):
+                    vol_env_data[i * 4:i * 4 + 2] = point.frame.to_bytes(2, byteorder='little')
+                    vol_env_data[i * 4 + 2:i * 4 + 4] = point.value.to_bytes(2, byteorder='little')
+                data += vol_env_data
+                
+                # Panning envelope (48 bytes)
+                pan_env_data = bytearray(48)
+                for i, point in enumerate(inst.panning_envelope[:12]):
+                    pan_env_data[i * 4:i * 4 + 2] = point.frame.to_bytes(2, byteorder='little')
+                    pan_env_data[i * 4 + 2:i * 4 + 4] = point.value.to_bytes(2, byteorder='little')
+                data += pan_env_data
+                
+                # Envelope point counts
+                data += bytes([len(inst.volume_envelope)])
+                data += bytes([len(inst.panning_envelope)])
+                
+                # Envelope control points
+                data += bytes([inst.volume_sustain_point])
+                data += bytes([inst.volume_loop_start])
+                data += bytes([inst.volume_loop_end])
+                data += bytes([inst.panning_sustain_point])
+                data += bytes([inst.panning_loop_start])
+                data += bytes([inst.panning_loop_end])
+                
+                # Envelope types
+                data += bytes([inst.volume_type])
+                data += bytes([inst.panning_type])
+                
+                # Vibrato settings
+                data += bytes([inst.vibrato_type])
+                data += bytes([inst.vibrato_sweep])
+                data += bytes([inst.vibrato_depth])
+                data += bytes([inst.vibrato_rate])
+                
+                # Volume fadeout
+                data += inst.volume_fadeout.to_bytes(2, byteorder='little')
+                
+                # Reserved (22 bytes)
+                data += bytes(22)
+                
+                # --- Sample headers (40 bytes each) ---
+                for sample in inst.samples:
+                    # Calculate sample length in bytes
+                    sample_len_bytes = len(sample.waveform) * (2 if sample.is_16bit else 1)
+                    
+                    # Loop values in bytes
+                    if sample.is_16bit:
+                        loop_start_bytes = sample.repeat_point * 2
+                        loop_len_bytes = sample.repeat_len * 2
+                    else:
+                        loop_start_bytes = sample.repeat_point
+                        loop_len_bytes = sample.repeat_len
+                    
+                    data += sample_len_bytes.to_bytes(4, byteorder='little')
+                    data += loop_start_bytes.to_bytes(4, byteorder='little')
+                    data += loop_len_bytes.to_bytes(4, byteorder='little')
+                    data += bytes([sample.volume])
+                    
+                    # Finetune (signed byte)
+                    finetune = sample.finetune
+                    if finetune < 0:
+                        finetune += 256
+                    data += bytes([finetune])
+                    
+                    # Sample type byte
+                    sample_type = sample.loop_type & 0x03
+                    if sample.is_16bit:
+                        sample_type |= 0x10
+                    data += bytes([sample_type])
+                    
+                    data += bytes([sample.panning])
+                    
+                    # Relative note (signed byte)
+                    rel_note = sample.relative_note
+                    if rel_note < 0:
+                        rel_note += 256
+                    data += bytes([rel_note])
+                    
+                    # Reserved byte (internal, for round-trip)
+                    data += bytes([sample._reserved])
+                    
+                    # Sample name
+                    data += str_to_bytes_padded(sample.name, 22)
+                
+                # --- Sample data (delta-encoded) ---
+                for sample in inst.samples:
+                    if len(sample.waveform) == 0:
+                        continue
+                    
+                    if sample.is_16bit:
+                        # 16-bit delta encoding
+                        old = 0
+                        for val in sample.waveform:
+                            delta = (val - old) & 0xFFFF
+                            # Convert to signed 16-bit for writing
+                            if delta > 32767:
+                                delta -= 65536
+                            data += delta.to_bytes(2, byteorder='little', signed=True)
+                            old = val
+                    else:
+                        # 8-bit delta encoding
+                        old = 0
+                        for val in sample.waveform:
+                            # val is signed (-128 to 127)
+                            delta = (val - old) & 0xFF
+                            data += bytes([delta])
+                            old = val
+
+        # Write to file
+        with open(fname, 'wb') as f:
+            f.write(data)
         
         if verbose:
             print('done.')
@@ -244,9 +617,10 @@ class XMSong(Song):
                 elif note_val == 97:
                     period_ = 'off'  # note off, "==" in OpenMPT
                 else:
-                    period = self.PERIOD_SEQ[(note_val % len(self.PERIOD_SEQ)) - 1]
-                    octave = int(note_val / len(self.PERIOD_SEQ)) + 1
-                    period_ = f"{period}{octave}"
+                    # XM notes: 1=C-1, 2=C#1, ..., 12=B-1, 13=C-2, ...
+                    note_idx = (note_val - 1) % 12
+                    octave = (note_val - 1) // 12 + 1
+                    period_ = f"{self.PERIOD_SEQ[note_idx]}{octave}"
 
                 return period_
 
@@ -446,10 +820,6 @@ class XMSong(Song):
                     elif not is_packed:
                         period = get_period(packed_byte)
 
-                    if period != '' and period != 'off':
-                        volume_cmd = 'v'
-                        volume_val = 64  # full volume, unless overwritten in the volume column
-
                     if not is_packed or (is_packed and packed_byte & 0x02):
                         byte_idx += 1
                         instrument = get_instrument(pattern_data[byte_idx])
@@ -464,6 +834,9 @@ class XMSong(Song):
 
                     if not is_packed or (is_packed and packed_byte & 0x10):
                         byte_idx += 1
+                        # If we have a param but no effect type, use effect type 0 (arpeggio)
+                        if effect == '':
+                            effect = '0'
                         effect = f"{effect}{get_efx_param(effect, pattern_data[byte_idx])}"
 
                     # Create XM note with all parsed data
@@ -509,11 +882,15 @@ class XMSong(Song):
                     byteorder='little', signed=False
                 )
                 
+                # Store original header size for round-trip saving
+                self.instruments[i]._header_size = inst_header_size
+                
                 # Instrument name (22 bytes at offset +4)
                 name_bytes = instrument_data[cur_inst_idx + 4:cur_inst_idx + 26]
                 self.instruments[i].name = name_bytes.decode('latin-1').rstrip('\x00')
                 
-                # Instrument type at offset +26 (always 0, but often random - ignore it)
+                # Instrument type at offset +26 (officially "always 0", but often random)
+                self.instruments[i]._type = instrument_data[cur_inst_idx + 26]
                 
                 # Number of samples in this instrument (2 bytes at offset +27)
                 n_samples = int.from_bytes(
@@ -654,6 +1031,9 @@ class XMSong(Song):
                             relative_note -= 256  # Convert to signed
                         
                         # Reserved byte at offset 17 (used by ModPlug for ADPCM indicator)
+                        # Store for byte-perfect round-trip
+                        reserved = instrument_data[sample_hdr_offset + 17]
+                        
                         # Sample name (22 bytes at offset 18)
                         sample_name = instrument_data[sample_hdr_offset + 18:sample_hdr_offset + 40]
                         
@@ -664,6 +1044,7 @@ class XMSong(Song):
                         sample.finetune = finetune
                         sample.panning = panning
                         sample.relative_note = relative_note
+                        sample._reserved = reserved
                         sample.loop_type = loop_type
                         sample.is_16bit = is_16bit
                         
