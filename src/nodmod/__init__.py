@@ -1,3 +1,4 @@
+from .types import *
 from .song import *
 from .modsong import *
 from .xmsong import *

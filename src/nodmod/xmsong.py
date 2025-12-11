@@ -381,7 +381,7 @@ class XMSong(Song):
             # ----------------------------
             # Load instrument data
             # ----------------------------
-            
+
             # Each instrument has a variable-size header. If n_samples > 0,
             # an extended header with sample mapping and envelopes follows.
             
@@ -486,6 +486,8 @@ class XMSong(Song):
                     # Sample data follows all sample headers
                     sample_headers_start = cur_inst_idx + inst_header_size
                     total_sample_data_size = 0
+
+                    # TODO: actually read sample headers and data
                     
                     for s in range(n_samples):
                         sample_hdr_offset = sample_headers_start + s * sample_header_size
