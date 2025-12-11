@@ -3,6 +3,8 @@ import array
 import os
 from abc import ABC, abstractmethod
 
+__all__ = ['Pattern', 'Sample', 'EnvelopePoint', 'Instrument', 'Note', 'XMNote', 'Song']
+
 
 class Pattern:
     """
@@ -46,6 +48,13 @@ class Sample:
         self.tune = ''
 
 
+class EnvelopePoint:
+    """A single point in a volume or panning envelope."""
+    def __init__(self, frame: int = 0, value: int = 0):
+        self.frame = frame  # X-coordinate (0-65535, but FT2 only supports 0-255)
+        self.value = value  # Y-coordinate (0-64)
+
+
 class Instrument:
     """
     An instrument is a container for samples, used in XM files.
@@ -56,7 +65,7 @@ class Instrument:
       - 1 sample (simple instrument)
       - Multiple samples (e.g., different samples for different note ranges)
     
-    The instrument also contains envelope and other playback settings (to be added later).
+    The instrument also contains envelope and other playback settings.
     """
 
     def __init__(self):
@@ -70,9 +79,28 @@ class Instrument:
         # If empty, all notes use sample index 0 (or no sample if samples list is empty)
         self.sample_map: list[int] = []
         
-        # Volume envelope (to be implemented)
-        # Panning envelope (to be implemented)
-        # Other XM instrument properties (to be implemented)
+        # Volume envelope
+        self.volume_envelope: list[EnvelopePoint] = []
+        self.volume_sustain_point: int = 0
+        self.volume_loop_start: int = 0
+        self.volume_loop_end: int = 0
+        self.volume_type: int = 0  # bit 0: On, bit 1: Sustain, bit 2: Loop
+        
+        # Panning envelope
+        self.panning_envelope: list[EnvelopePoint] = []
+        self.panning_sustain_point: int = 0
+        self.panning_loop_start: int = 0
+        self.panning_loop_end: int = 0
+        self.panning_type: int = 0  # bit 0: On, bit 1: Sustain, bit 2: Loop
+        
+        # Vibrato settings (auto-vibrato applied to all notes in this instrument)
+        self.vibrato_type: int = 0
+        self.vibrato_sweep: int = 0
+        self.vibrato_depth: int = 0
+        self.vibrato_rate: int = 0
+        
+        # Volume fadeout (0-65535, applied after note release)
+        self.volume_fadeout: int = 0
 
     @property
     def n_samples(self) -> int:

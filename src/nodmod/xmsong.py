@@ -1,6 +1,7 @@
 from nodmod import Song
 from nodmod import Sample
 from nodmod import Instrument
+from nodmod import EnvelopePoint
 from nodmod import Pattern
 from nodmod import XMNote
 
@@ -289,10 +290,6 @@ class XMSong(Song):
 
             for p in range(n_unique_patterns):
 
-                print("")
-                print(f"-------------\nPattern {p}\n-------------")
-                print("")
-
                 if pattern_data[cur_pat_idx:cur_pat_idx + 4][0] != 9:
                     raise NotImplementedError(f"Unsupported pattern header length: {pattern_data[cur_pat_idx:cur_pat_idx + 4][0]}.")
 
@@ -355,20 +352,6 @@ class XMSong(Song):
                         byte_idx += 1
                         effect = f"{effect}{get_efx_param(effect, pattern_data[byte_idx])}"
 
-                    # pretty print
-                    if period == '':
-                        print('--- ', end='')
-                    elif period == 'off':
-                        print('==  ', end='')
-                    else:
-                        print(f"{period} ", end='')
-                    print(f"{'--' if instrument==0 else f'{instrument:02d}'} {'-' if volume_cmd=='' else volume_cmd}", end='')
-                    if volume_val == -1:
-                        print('-- ', end='')
-                    else:
-                        print(f"{volume_val:02d} ", end='')
-                    print(f"{'---' if effect=='' else effect} | ", end='')
-
                     # Create XM note with all parsed data
                     note = XMNote()
                     note.instrument_idx = instrument
@@ -386,7 +369,6 @@ class XMSong(Song):
                     if c == n_channels:
                         c = 0
                         r += 1
-                        print("")
 
                     if byte_idx == cur_pat_idx + 9 + pattern_data_size:
                         break  # next pattern
@@ -396,8 +378,127 @@ class XMSong(Song):
                 # next pattern
                 cur_pat_idx += 9 + pattern_data_size
 
-
-        
+            # ----------------------------
+            # Load instrument data
+            # ----------------------------
+            
+            # Each instrument has a variable-size header. If n_samples > 0,
+            # an extended header with sample mapping and envelopes follows.
+            
+            instrument_data = pattern_data[cur_pat_idx:]
+            cur_inst_idx = 0
+            
+            for i in range(self.n_instruments):
+                # Read instrument header size (4 bytes)
+                inst_header_size = int.from_bytes(
+                    instrument_data[cur_inst_idx:cur_inst_idx + 4], 
+                    byteorder='little', signed=False
+                )
+                
+                # Instrument name (22 bytes at offset +4)
+                name_bytes = instrument_data[cur_inst_idx + 4:cur_inst_idx + 26]
+                self.instruments[i].name = name_bytes.decode('latin-1').rstrip('\x00')
+                
+                # Instrument type at offset +26 (always 0, but often random - ignore it)
+                
+                # Number of samples in this instrument (2 bytes at offset +27)
+                n_samples = int.from_bytes(
+                    instrument_data[cur_inst_idx + 27:cur_inst_idx + 29], 
+                    byteorder='little', signed=False
+                )
+                
+                if verbose:
+                    print(f"Instrument {i + 1}: '{self.instruments[i].name}' ({n_samples} samples)")
+                
+                # Total bytes to skip for this instrument (header + sample headers + sample data)
+                total_inst_size = inst_header_size
+                
+                if n_samples > 0:
+                    # Extended header follows (starting at offset +29)
+                    ext_offset = cur_inst_idx + 29
+                    
+                    # Sample header size (4 bytes) - size of each sample header that follows
+                    sample_header_size = int.from_bytes(
+                        instrument_data[ext_offset:ext_offset + 4], 
+                        byteorder='little', signed=False
+                    )
+                    
+                    # Sample number for all notes (96 bytes at offset +33)
+                    # Maps note numbers 0-95 to sample indices within this instrument
+                    sample_map_bytes = instrument_data[ext_offset + 4:ext_offset + 100]
+                    self.instruments[i].sample_map = list(sample_map_bytes)
+                    
+                    # Volume envelope points (48 bytes at offset +129)
+                    # Each point is 2 words (4 bytes): frame (X), value (Y)
+                    vol_env_bytes = instrument_data[ext_offset + 100:ext_offset + 148]
+                    
+                    # Panning envelope points (48 bytes at offset +177)
+                    pan_env_bytes = instrument_data[ext_offset + 148:ext_offset + 196]
+                    
+                    # Number of volume points (1 byte at offset +225)
+                    n_vol_points = instrument_data[ext_offset + 196]
+                    
+                    # Number of panning points (1 byte at offset +226)
+                    n_pan_points = instrument_data[ext_offset + 197]
+                    
+                    # Parse volume envelope points
+                    for p in range(n_vol_points):
+                        frame = int.from_bytes(vol_env_bytes[p * 4:p * 4 + 2], byteorder='little', signed=False)
+                        value = int.from_bytes(vol_env_bytes[p * 4 + 2:p * 4 + 4], byteorder='little', signed=False)
+                        self.instruments[i].volume_envelope.append(EnvelopePoint(frame, value))
+                    
+                    # Parse panning envelope points
+                    for p in range(n_pan_points):
+                        frame = int.from_bytes(pan_env_bytes[p * 4:p * 4 + 2], byteorder='little', signed=False)
+                        value = int.from_bytes(pan_env_bytes[p * 4 + 2:p * 4 + 4], byteorder='little', signed=False)
+                        self.instruments[i].panning_envelope.append(EnvelopePoint(frame, value))
+                    
+                    # Envelope control points (offsets +227 to +232)
+                    self.instruments[i].volume_sustain_point = instrument_data[ext_offset + 198]
+                    self.instruments[i].volume_loop_start = instrument_data[ext_offset + 199]
+                    self.instruments[i].volume_loop_end = instrument_data[ext_offset + 200]
+                    self.instruments[i].panning_sustain_point = instrument_data[ext_offset + 201]
+                    self.instruments[i].panning_loop_start = instrument_data[ext_offset + 202]
+                    self.instruments[i].panning_loop_end = instrument_data[ext_offset + 203]
+                    
+                    # Envelope types (offset +233, +234)
+                    # bit 0: On, bit 1: Sustain, bit 2: Loop
+                    self.instruments[i].volume_type = instrument_data[ext_offset + 204]
+                    self.instruments[i].panning_type = instrument_data[ext_offset + 205]
+                    
+                    # Vibrato settings (offsets +235 to +238)
+                    self.instruments[i].vibrato_type = instrument_data[ext_offset + 206]
+                    self.instruments[i].vibrato_sweep = instrument_data[ext_offset + 207]
+                    self.instruments[i].vibrato_depth = instrument_data[ext_offset + 208]
+                    self.instruments[i].vibrato_rate = instrument_data[ext_offset + 209]
+                    
+                    # Volume fadeout (2 bytes at offset +239)
+                    self.instruments[i].volume_fadeout = int.from_bytes(
+                        instrument_data[ext_offset + 210:ext_offset + 212], 
+                        byteorder='little', signed=False
+                    )
+                    
+                    # Pre-allocate sample slots for this instrument
+                    self.instruments[i].samples = [Sample() for _ in range(n_samples)]
+                    
+                    # Calculate total size: instrument header + all sample headers + all sample data
+                    # Sample headers follow the instrument header
+                    # Sample data follows all sample headers
+                    sample_headers_start = cur_inst_idx + inst_header_size
+                    total_sample_data_size = 0
+                    
+                    for s in range(n_samples):
+                        sample_hdr_offset = sample_headers_start + s * sample_header_size
+                        sample_length = int.from_bytes(
+                            instrument_data[sample_hdr_offset:sample_hdr_offset + 4],
+                            byteorder='little', signed=False
+                        )
+                        total_sample_data_size += sample_length
+                    
+                    total_inst_size = inst_header_size + n_samples * sample_header_size + total_sample_data_size
+                
+                # Move to next instrument
+                cur_inst_idx += total_inst_size
 
         if verbose:
             print('done.')
