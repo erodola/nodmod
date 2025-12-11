@@ -9,7 +9,7 @@ This module contains all the data classes used across different tracker formats:
 
 import array
 
-__all__ = ['Pattern', 'Sample', 'EnvelopePoint', 'Instrument', 'Note', 'XMNote']
+__all__ = ['Pattern', 'Sample', 'XMSample', 'EnvelopePoint', 'Instrument', 'Note', 'XMNote']
 
 
 class Note:
@@ -127,26 +127,58 @@ class Pattern:
 class Sample:
     """
     A sample is a digitized soundwave plus some additional attributes.
-    Samples are played as notes in a song.
-    
-    For MOD files: Samples are referenced directly by notes.
-    For XM files: Samples are contained within Instruments.
+    This base class is used for MOD files where samples are referenced directly by notes.
     """
+
+    # Loop type constants (shared with XMSample)
+    LOOP_NONE = 0
+    LOOP_FORWARD = 1
+    LOOP_PINGPONG = 2
 
     def __init__(self):
         self.name = ""
 
-        # MOD attributes
-        self.finetune = 0
-        self.volume = 64
-        self.repeat_point = 0
-        self.repeat_len = 0
+        # MOD sample attributes
+        self.finetune = 0      # 0-15 (MOD uses 4-bit unsigned finetune)
+        self.volume = 64       # 0-64
+        self.repeat_point = 0  # Loop start (in samples)
+        self.repeat_len = 0    # Loop length (in samples, 0 or 1 = no loop)
 
-        self.waveform = array.array('b')  # signed integers (8-bit audio)
+        # Waveform data: signed 8-bit samples (MOD is always 8-bit)
+        self.waveform = array.array('b')
 
         # Tells which sample pitch corresponds to true G (Sol).
         # Can be estimated, e.g., with MODSong.tune_sample().
         self.tune = ''
+    
+    @property
+    def length(self) -> int:
+        """Return sample length in samples (not bytes)."""
+        return len(self.waveform)
+
+
+class XMSample(Sample):
+    """
+    Extended sample class for XM files.
+    XM samples have additional attributes: panning, relative note, 16-bit support,
+    and a different finetune range.
+    """
+
+    def __init__(self):
+        super().__init__()
+        
+        # Override finetune semantics: XM uses signed -128 to +127 (±127 = one half-tone)
+        self.finetune = 0
+        
+        # XM-specific attributes
+        self.loop_type = Sample.LOOP_NONE  # 0=none, 1=forward, 2=ping-pong
+        self.panning = 128       # 0-255 (128 = center)
+        self.relative_note = 0   # Signed: -96 to +95, 0 = C-4 plays as C-4
+        self.is_16bit = False    # True for 16-bit samples
+        
+        # Waveform: 8-bit uses 'b' (signed byte), 16-bit uses 'h' (signed short)
+        # Default to 8-bit, changed when loading 16-bit samples
+        self.waveform = array.array('b')
 
 
 class EnvelopePoint:

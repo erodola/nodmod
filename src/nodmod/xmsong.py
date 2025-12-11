@@ -1,9 +1,12 @@
+import array
+
 from nodmod import Song
-from nodmod import Sample
+from nodmod import XMSample
 from nodmod import Instrument
 from nodmod import EnvelopePoint
 from nodmod import Pattern
 from nodmod import XMNote
+
 
 class XMSong(Song):
     """
@@ -477,25 +480,145 @@ class XMSong(Song):
                         instrument_data[ext_offset + 210:ext_offset + 212], 
                         byteorder='little', signed=False
                     )
+
+                    # ----------------------------
+                    # Load sample data
+                    # ----------------------------
                     
                     # Pre-allocate sample slots for this instrument
-                    self.instruments[i].samples = [Sample() for _ in range(n_samples)]
+                    self.instruments[i].samples = [XMSample() for _ in range(n_samples)]
                     
                     # Calculate total size: instrument header + all sample headers + all sample data
                     # Sample headers follow the instrument header
                     # Sample data follows all sample headers
                     sample_headers_start = cur_inst_idx + inst_header_size
                     total_sample_data_size = 0
-
-                    # TODO: actually read sample headers and data
+                    
+                    # First pass: read all sample headers and calculate total data size
+                    sample_lengths = []  # Store lengths for second pass
+                    sample_is_16bit = []  # Store bit depth for second pass
                     
                     for s in range(n_samples):
                         sample_hdr_offset = sample_headers_start + s * sample_header_size
+                        
+                        # Sample length in bytes (4 bytes at offset 0)
                         sample_length = int.from_bytes(
                             instrument_data[sample_hdr_offset:sample_hdr_offset + 4],
                             byteorder='little', signed=False
                         )
+                        
+                        # Loop start in bytes (4 bytes at offset 4)
+                        loop_start = int.from_bytes(
+                            instrument_data[sample_hdr_offset + 4:sample_hdr_offset + 8],
+                            byteorder='little', signed=False
+                        )
+                        
+                        # Loop length in bytes (4 bytes at offset 8)
+                        loop_length = int.from_bytes(
+                            instrument_data[sample_hdr_offset + 8:sample_hdr_offset + 12],
+                            byteorder='little', signed=False
+                        )
+                        
+                        # Volume (1 byte at offset 12)
+                        volume = instrument_data[sample_hdr_offset + 12]
+                        
+                        # Finetune (1 signed byte at offset 13, -128 to +127)
+                        finetune = instrument_data[sample_hdr_offset + 13]
+                        if finetune > 127:
+                            finetune -= 256  # Convert to signed
+                        
+                        # Sample type (1 byte at offset 14)
+                        # Bits 0-1: loop type (0=none, 1=forward, 2=ping-pong)
+                        # Bit 4: 16-bit sample
+                        sample_type = instrument_data[sample_hdr_offset + 14]
+                        loop_type = sample_type & 0x03
+                        is_16bit = bool(sample_type & 0x10)
+                        
+                        # Panning (1 byte at offset 15, 0-255)
+                        panning = instrument_data[sample_hdr_offset + 15]
+                        
+                        # Relative note (1 signed byte at offset 16, -96 to +95)
+                        relative_note = instrument_data[sample_hdr_offset + 16]
+                        if relative_note > 127:
+                            relative_note -= 256  # Convert to signed
+                        
+                        # Reserved byte at offset 17 (used by ModPlug for ADPCM indicator)
+                        # Sample name (22 bytes at offset 18)
+                        sample_name = instrument_data[sample_hdr_offset + 18:sample_hdr_offset + 40]
+                        
+                        # Store sample metadata
+                        sample = self.instruments[i].samples[s]
+                        sample.name = sample_name.decode('latin-1').rstrip('\x00')
+                        sample.volume = volume
+                        sample.finetune = finetune
+                        sample.panning = panning
+                        sample.relative_note = relative_note
+                        sample.loop_type = loop_type
+                        sample.is_16bit = is_16bit
+                        
+                        # Convert loop values from bytes to samples
+                        if is_16bit:
+                            sample.repeat_point = loop_start // 2
+                            sample.repeat_len = loop_length // 2
+                        else:
+                            sample.repeat_point = loop_start
+                            sample.repeat_len = loop_length
+                        
+                        sample_lengths.append(sample_length)
+                        sample_is_16bit.append(is_16bit)
                         total_sample_data_size += sample_length
+                    
+                    # Second pass: read sample data (comes after all sample headers)
+                    sample_data_start = sample_headers_start + n_samples * sample_header_size
+                    sample_data_offset = 0
+                    
+                    for s in range(n_samples):
+                        sample = self.instruments[i].samples[s]
+                        sample_length = sample_lengths[s]
+                        is_16bit = sample_is_16bit[s]
+                        
+                        if sample_length == 0:
+                            continue
+                        
+                        raw_data = instrument_data[
+                            sample_data_start + sample_data_offset:
+                            sample_data_start + sample_data_offset + sample_length
+                        ]
+                        
+                        # Decode delta-encoded sample data
+                        if is_16bit:
+                            # 16-bit samples: signed 16-bit integers, little-endian
+                            n_samples_count = sample_length // 2
+                            sample.waveform = array.array('h')  # signed short
+                            old = 0
+                            for j in range(n_samples_count):
+                                # Read little-endian signed 16-bit value
+                                delta = int.from_bytes(
+                                    raw_data[j * 2:j * 2 + 2],
+                                    byteorder='little', signed=True
+                                )
+                                new_val = (old + delta) & 0xFFFF
+                                # Convert to signed
+                                if new_val > 32767:
+                                    new_val -= 65536
+                                sample.waveform.append(new_val)
+                                old = new_val
+                        else:
+                            # 8-bit samples: signed bytes
+                            sample.waveform = array.array('b')  # signed byte
+                            old = 0
+                            for j in range(sample_length):
+                                delta = raw_data[j]
+                                if delta > 127:
+                                    delta -= 256  # Convert to signed
+                                new_val = (old + delta) & 0xFF
+                                # Convert to signed for storage
+                                if new_val > 127:
+                                    new_val -= 256
+                                sample.waveform.append(new_val)
+                                old = new_val & 0xFF  # Keep as unsigned for delta calc
+                        
+                        sample_data_offset += sample_length
                     
                     total_inst_size = inst_header_size + n_samples * sample_header_size + total_sample_data_size
                 
