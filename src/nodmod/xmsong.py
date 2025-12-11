@@ -44,9 +44,6 @@ class XMSong(Song):
         self.default_tempo = 125   # Default BPM
         self.n_channels = 8        # Number of channels (XM supports 2-32)
         
-        # Source file path (used for save_to_file until XM writing is implemented)
-        self._source_file: str | None = None
-
     def copy(self) -> 'XMSong':
         """
         Creates a deep copy of this song.
@@ -70,9 +67,6 @@ class XMSong(Song):
         new_song.default_speed = self.default_speed
         new_song.default_tempo = self.default_tempo
         new_song.n_channels = self.n_channels
-        
-        # Note: _source_file is NOT copied - the copy is a new in-memory song
-        new_song._source_file = None
         
         return new_song
 
@@ -521,10 +515,6 @@ class XMSong(Song):
         :param verbose: False for silent loading.
         :return: None.
         """
-        
-        # Store source file path for save_to_file
-        self._source_file = fname
-
         if verbose:
             print(f'Loading {fname}... ', end='', flush=True)
 
