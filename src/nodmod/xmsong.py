@@ -42,6 +42,7 @@ class XMSong(Song):
         self.flags = 0             # bit 0: 0 = Amiga frequency table, 1 = Linear frequency table
         self.default_speed = 6     # Default ticks per row
         self.default_tempo = 125   # Default BPM
+        self.n_channels = 8        # Number of channels (XM supports 2-32)
         
         # Source file path (used for save_to_file until XM writing is implemented)
         self._source_file: str | None = None
@@ -68,6 +69,7 @@ class XMSong(Song):
         new_song.flags = self.flags
         new_song.default_speed = self.default_speed
         new_song.default_tempo = self.default_tempo
+        new_song.n_channels = self.n_channels
         
         # Note: _source_file is NOT copied - the copy is a new in-memory song
         new_song._source_file = None
@@ -189,9 +191,9 @@ class XMSong(Song):
             self.song_restart = int.from_bytes(data[66:68], byteorder='little', signed=False)
 
             # number of channels
-            n_channels = int.from_bytes(data[68:70], byteorder='little', signed=False)
-            if n_channels > 32:
-                raise NotImplementedError(f"Too many channels: {n_channels}.")
+            self.n_channels = int.from_bytes(data[68:70], byteorder='little', signed=False)
+            if self.n_channels > 32:
+                raise NotImplementedError(f"Too many channels: {self.n_channels}.")
 
             # number of instruments (note : some instruments may be empty)
             self.n_instruments = int.from_bytes(data[72:74], byteorder='little', signed=False)
@@ -416,7 +418,7 @@ class XMSong(Song):
                 if pattern_data_size == 0:
                     raise NotImplementedError(f"Empty pattern.")
 
-                pat = Pattern(n_rows, n_channels)
+                pat = Pattern(n_rows, self.n_channels)
 
                 # Read the pattern data byte by byte.
                 # Notes are stored row-wise: first all notes across all channels for row 0, then row 1, etc.
@@ -478,7 +480,7 @@ class XMSong(Song):
                     byte_idx += 1
 
                     c += 1  # move to the next channel
-                    if c == n_channels:
+                    if c == self.n_channels:
                         c = 0
                         r += 1
 
@@ -757,6 +759,45 @@ class XMSong(Song):
     PATTERNS
     -------------------------------------
     '''
+
+    def clear_pattern(self, pattern: int):
+        """
+        Clears completely a specified pattern.
+        The pattern is not removed from the song sequence, but all the notes are set to empty.
+
+        :param pattern: The pattern index (within the song sequence) to be cleared.
+        :return: None.
+        """
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        p = self.pattern_seq[pattern]
+        pat = self.patterns[p]
+        for r in range(pat.n_rows):
+            for c in range(pat.n_channels):
+                pat.data[c][r] = XMNote()
+
+    def add_pattern(self, n_rows: int = 64) -> int:
+        """
+        Creates a brand new pattern and adds it to the song sequence.
+
+        :param n_rows: Number of rows in the new pattern (default 64, XM supports 1-256).
+        :return: The index of the new pattern in the sequence.
+        """
+        if n_rows < 1 or n_rows > 256:
+            raise ValueError(f"Invalid row count {n_rows}. XM supports 1-256 rows.")
+        
+        # Create pattern with XMNote objects
+        pat = Pattern(n_rows, self.n_channels)
+        for c in range(self.n_channels):
+            for r in range(n_rows):
+                pat.data[c][r] = XMNote()
+        
+        self.patterns.append(pat)
+        n = len(self.patterns) - 1
+        self.pattern_seq.append(n)
+
+        return n
 
     def get_effective_row_count(self, pattern: int) -> int:
         """
