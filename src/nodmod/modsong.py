@@ -5,8 +5,6 @@ from nodmod import Pattern
 from nodmod import Note
 import array
 import os
-import subprocess
-import shutil
 import pydub  # needed for loading WAV samples
 import copy
 
@@ -37,6 +35,10 @@ class MODSong(Song):
     }
 
     INV_PERIOD_TABLE = {value: key for key, value in PERIOD_TABLE.items()}
+
+    @property
+    def file_extension(self) -> str:
+        return 'mod'
 
     def __init__(self):
         """
@@ -236,7 +238,7 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_as_mod(self, fname: str, verbose: bool = True):
+    def save_to_file(self, fname: str, verbose: bool = True):
         """
         Saves the song as a standard MOD file.
 
@@ -364,48 +366,8 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def render_as_wav(self, fname: str, verbose: bool = True, cleanup: bool = False):
-        """
-        Renders the current song as a WAV file.
-        Note: Requires openmpt123.exe to be installed in the current working directory.
-
-        :param fname: Complete path of the output WAV file.
-        :param verbose: False for silent rendering.
-        :param cleanup: True to remove the temporary MOD file generated for rendering.
-        :return: None.
-        """
-
-        if verbose:
-            print("Rendering as wav... ", end='', flush=True)
-
-        if os.path.isfile(fname):
-            os.remove(fname)
-
-        noext = os.path.splitext(fname)
-
-        if os.path.isfile(f"{noext[0]}.mod"):
-            os.remove(f"{noext[0]}.mod")
-
-        self.save_as_mod(f"{noext[0]}.mod", False)
-
-        if os.path.isfile(f"{noext[0]}.mod.wav"):
-            os.remove(f"{noext[0]}.mod.wav")
-
-        try:
-            subprocess.run(f"openmpt123.exe {noext[0]}.mod -q --channels 1 --samplerate 44100 --render", check=True)
-        except FileNotFoundError as _:
-            try:
-                subprocess.run([f"ffmpeg", "-i", f"{noext[0]}.mod", f"{noext[0]}.mod.wav"], check=True)
-            except FileNotFoundError as e:
-                raise FileNotFoundError(e)
-
-        shutil.move(f"{noext[0]}.mod.wav", fname)
-
-        if cleanup:
-            os.remove(f"{noext[0]}.mod")
-
-        if verbose:
-            print("done.")
+    # Alias for backwards compatibility
+    save_as_mod = save_to_file
     
     '''
     -------------------------------------

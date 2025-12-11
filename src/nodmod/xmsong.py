@@ -1,4 +1,5 @@
 import array
+import shutil
 
 from nodmod import Song
 from nodmod import XMSample
@@ -17,6 +18,10 @@ class XMSong(Song):
     instruments by index, and the instrument determines which sample(s) to play.
     """
     
+    @property
+    def file_extension(self) -> str:
+        return 'xm'
+    
     def __init__(self):
         super().__init__()
         
@@ -24,6 +29,9 @@ class XMSong(Song):
         # Each Instrument can contain multiple Sample objects
         self.instruments: list[Instrument] = []
         self.n_instruments = 0  # Number from header (includes empty instruments)
+        
+        # Source file path (used for save_to_file until XM writing is implemented)
+        self._source_file: str | None = None
 
     '''
     -------------------------------------
@@ -31,15 +39,42 @@ class XMSong(Song):
     -------------------------------------
     '''
 
+    def save_to_file(self, fname: str, verbose: bool = True):
+        """
+        Saves the song as a standard XM file.
+        
+        Note: Full XM writing is not yet implemented. This method copies the
+        original source file if available.
+        
+        :param fname: Complete file path.
+        :param verbose: False for silent saving.
+        :return: None.
+        """
+        if self._source_file is None:
+            raise NotImplementedError(
+                "XM file writing is not yet implemented. "
+                "Can only save XM files that were loaded from disk."
+            )
+        
+        if verbose:
+            print(f'Saving to {fname}... ', end='', flush=True)
+        
+        shutil.copy2(self._source_file, fname)
+        
+        if verbose:
+            print('done.')
+
     def load_from_file(self, fname: str, verbose: bool = True):
         """
         Loads a song from a standard XM file.
-        TODO
 
         :param fname: The path to the module file.
         :param verbose: False for silent loading.
         :return: None.
         """
+        
+        # Store source file path for save_to_file
+        self._source_file = fname
 
         if verbose:
             print(f'Loading {fname}... ', end='', flush=True)

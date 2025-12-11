@@ -7,6 +7,8 @@ Format-specific implementations are in modsong.py, xmsong.py, etc.
 
 import copy
 import os
+import shutil
+import subprocess
 from abc import ABC, abstractmethod
 
 from .types import Note
@@ -74,6 +76,75 @@ class Song(ABC):
         song_name = os.path.splitext(song_name)[0]
         # print(f"{filename} | {artist_name} | {song_name}")
         return artist_name, song_name
+
+    @property
+    @abstractmethod
+    def file_extension(self) -> str:
+        """
+        Returns the file extension for this song format (e.g., 'mod', 'xm').
+        """
+        pass
+
+    @abstractmethod
+    def save_to_file(self, fname: str, verbose: bool = True):
+        """
+        Saves the song to a file in its native format.
+
+        :param fname: Complete file path.
+        :param verbose: False for silent saving.
+        """
+        pass
+
+    def render_as_wav(self, fname: str, verbose: bool = True, cleanup: bool = True):
+        """
+        Renders the current song as a WAV file.
+        Note: Requires openmpt123 or ffmpeg to be installed and available in PATH.
+
+        :param fname: Complete path of the output WAV file.
+        :param verbose: False for silent rendering.
+        :param cleanup: True to remove the temporary module file generated for rendering.
+        :return: None.
+        """
+
+        if verbose:
+            print("Rendering as wav... ", end='', flush=True)
+
+        if os.path.isfile(fname):
+            os.remove(fname)
+
+        noext = os.path.splitext(fname)[0]
+        ext = self.file_extension
+        temp_file = f"{noext}.{ext}"
+        temp_wav = f"{temp_file}.wav"
+
+        if os.path.isfile(temp_file):
+            os.remove(temp_file)
+
+        self.save_to_file(temp_file, verbose=False)
+
+        if os.path.isfile(temp_wav):
+            os.remove(temp_wav)
+
+        try:
+            subprocess.run(
+                ["openmpt123", temp_file, "-q", "--channels", "1", "--samplerate", "44100", "--render"],
+                check=True
+            )
+        except FileNotFoundError:
+            try:
+                subprocess.run(["ffmpeg", "-i", temp_file, temp_wav], check=True)
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    "Neither openmpt123 nor ffmpeg found. Install one of them to render WAV files."
+                ) from e
+
+        shutil.move(temp_wav, fname)
+
+        if cleanup:
+            os.remove(temp_file)
+
+        if verbose:
+            print("done.")
 
     @abstractmethod
     def timestamp(self) -> list[list[float, int, int]]:
