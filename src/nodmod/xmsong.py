@@ -533,7 +533,7 @@ class XMSong(Song):
             magic_string = header[:17].decode('utf-8')
 
             if magic_string != "Extended Module: ":  # non-standard xm file
-                raise NotImplementedError(f"Unsupported module format {magic_string}.")
+                raise NotImplementedError(f"Not an XM module! Magic string: {magic_string}.")
             
             self.songname = header[17:37].decode('utf-8').rstrip(' ')
 
@@ -595,98 +595,93 @@ class XMSong(Song):
             # Load pattern data
             # ----------------------------
 
-            def get_period(note_byte) -> str:
+            def get_period(note_byte, pat_num, row, chan) -> str:
 
-                if note_byte & 0x80:
-                    raise NotImplementedError("The note has the MSB set.")
-            
                 note_val = note_byte & 0x7F
-
-                if note_val > 97:
-                    raise NotImplementedError("Invalid note value.")
 
                 if note_val == 0:
                     period_ = ''  # no note
-                elif note_val == 97:
-                    period_ = 'off'  # note off, "==" in OpenMPT
-                else:
+                elif note_val <= 96:
                     # XM notes: 1=C-1, 2=C#1, ..., 12=B-1, 13=C-2, ...
                     note_idx = (note_val - 1) % 12
                     octave = (note_val - 1) // 12 + 1
                     period_ = f"{self.PERIOD_SEQ[note_idx]}{octave}"
+                elif note_val == 97:
+                    period_ = 'off'  # note off, "==" in OpenMPT
+                else:
+                    # Invalid note values (98-127) - warn and ignore
+                    if verbose:
+                        warnings.warn(f"Non-standard note value {note_val} at pattern {pat_num}, row {row}, channel {chan}. Ignoring.")
+                    period_ = ''
 
                 return period_
 
-            def get_instrument(instrument_byte) -> int:
+            def get_instrument(instrument_byte, pat_num, row, chan) -> int:
 
-                if instrument_byte > 127:
-                    raise NotImplementedError("Invalid instrument value.")
+                if instrument_byte > 128:
+                    if verbose:
+                        warnings.warn(f"Non-standard instrument value {instrument_byte} at pattern {pat_num}, row {row}, channel {chan}. Ignoring.")
+                    return 0  # Treat as "no instrument change"
                             
                 return instrument_byte
 
             def get_volume(volume_byte) -> tuple[str, int]:
 
+                volume_cmd = ''
+                volume_val = 0
                 cmd_nibble = volume_byte & 0xF0
                 val_nibble = volume_byte & 0x0F
 
-                if cmd_nibble >= 0x00 and cmd_nibble <= 0x0F:
-                    raise NotImplementedError("Volume command does nothing")
-                if cmd_nibble >= 0x51 and cmd_nibble <= 0x5F:
-                    raise NotImplementedError("Volume command undefined")
-
-                if cmd_nibble >= 0x10 and cmd_nibble <= 0x1F:  # set volume
+                if volume_byte == 0:
+                    pass  # Empty volume column, keep defaults
+                elif volume_byte < 0x10:
+                    pass  # Values 0x01-0x0F are undefined in XM, ignore them
+                elif cmd_nibble >= 0x10 and cmd_nibble <= 0x40:  # set volume 0-64
                     volume_cmd = 'v'
-                    volume_val = val_nibble
-                elif cmd_nibble >= 0x20 and cmd_nibble <= 0x2F:
-                    volume_cmd = 'v'
-                    volume_val = val_nibble + 16
-                elif cmd_nibble >= 0x30 and cmd_nibble <= 0x3F:
-                    volume_cmd = 'v'
-                    volume_val = val_nibble + 32
-                elif cmd_nibble >= 0x40 and cmd_nibble <= 0x4F:
-                    volume_cmd = 'v'
-                    volume_val = val_nibble + 48
-                elif cmd_nibble == 0x50:
+                    volume_val = volume_byte - 0x10
+                elif volume_byte == 0x50:
                     volume_cmd = 'v'
                     volume_val = 64
+                elif volume_byte > 0x50 and volume_byte < 0x60:
+                    pass  # Values 0x51-0x5F are undefined in XM, ignore them
 
-                elif cmd_nibble >= 0x60 and cmd_nibble <= 0x6F:  # volume slide down
+                elif cmd_nibble == 0x60:  # volume slide down
                     volume_cmd = 'd'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0x70 and cmd_nibble <= 0x7F:  # volume slide up
+                elif cmd_nibble == 0x70:  # volume slide up
                     volume_cmd = 'c'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0x80 and cmd_nibble <= 0x8F:  # fine volume slide down
+                elif cmd_nibble == 0x80:  # fine volume slide down
                     volume_cmd = 'b'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0x90 and cmd_nibble <= 0x9F:  # fine volume slide up
+                elif cmd_nibble == 0x90:  # fine volume slide up
                     volume_cmd = 'a'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0xA0 and cmd_nibble <= 0xAF:  # vibrato speed
+                elif cmd_nibble == 0xA0:  # vibrato speed
                     volume_cmd = 'u'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0xB0 and cmd_nibble <= 0xBF:  # vibrato depth
+                elif cmd_nibble == 0xB0:  # vibrato depth
                     volume_cmd = 'h'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0xC0 and cmd_nibble <= 0xCF:  # set panning position
+                elif cmd_nibble == 0xC0:  # set panning position
                     volume_cmd = 'p'
                     volume_val = val_nibble * 4
 
-                elif cmd_nibble >= 0xD0 and cmd_nibble <= 0xDF: # panning slide left
+                elif cmd_nibble == 0xD0:  # panning slide left
                     volume_cmd = 'l'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0xE0 and cmd_nibble <= 0xEF: # panning slide right
+                elif cmd_nibble == 0xE0:  # panning slide right
                     volume_cmd = 'r'
                     volume_val = val_nibble
 
-                elif cmd_nibble >= 0xF0 and cmd_nibble <= 0xFF: # tone portamento
+                elif cmd_nibble == 0xF0:  # tone portamento
                     volume_cmd = 'g'
                     volume_val = val_nibble
 
@@ -821,13 +816,13 @@ class XMSong(Song):
                     if is_packed:
                         if packed_byte & 0x01:
                             byte_idx += 1
-                            period = get_period(pattern_data[byte_idx])
+                            period = get_period(pattern_data[byte_idx], p, r, c)
                     elif not is_packed:
-                        period = get_period(packed_byte)
+                        period = get_period(packed_byte, p, r, c)
 
                     if not is_packed or (is_packed and packed_byte & 0x02):
                         byte_idx += 1
-                        instrument = get_instrument(pattern_data[byte_idx])
+                        instrument = get_instrument(pattern_data[byte_idx], p, r, c)
 
                     if not is_packed or (is_packed and packed_byte & 0x04):
                         byte_idx += 1
