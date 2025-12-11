@@ -102,7 +102,7 @@ class XMSong(Song):
             # Load pattern data
             # ----------------------------
 
-            def get_period(note_byte):
+            def get_period(note_byte) -> str:
 
                 if note_byte & 0x80:
                     raise NotImplementedError("The note has the MSB set.")
@@ -123,14 +123,14 @@ class XMSong(Song):
 
                 return period_
 
-            def get_instrument(instrument_byte):
+            def get_instrument(instrument_byte) -> str:
 
                 if instrument_byte > 127:
                     raise NotImplementedError("Invalid instrument value.")
                             
                 return f"{instrument_byte:02d}"
 
-            def get_volume(volume_byte):
+            def get_volume(volume_byte) -> tuple[str, int]:
 
                 cmd_nibble = volume_byte & 0xF0
                 val_nibble = volume_byte & 0x0F
@@ -198,41 +198,76 @@ class XMSong(Song):
 
                 return volume_cmd, volume_val
 
-            def get_efx_type(effect_byte):  #FIXME add effect X
+            def get_efx_type(effect_byte) -> str:
 
                 if effect_byte <= 0x0D or effect_byte == 0x0F:
-                    efx = f"{effect_byte:01X}"
+                    efx = f"{effect_byte:01X}"  
+                    # 0=Arpeggio, 1=Porta up, 2=Porta down, 3=Tone porta, 4=Vibrato, 
+                    # 5=Tone porta+Vol slide, 6=Vibrato+Vol slide, 7=Tremolo, 8=Set panning, 
+                    # 9=Sample offset, A=Vol slide, B=Position jump, C=Set volume, 
+                    # D=Pattern break, F=Set tempo/BPM
 
                 elif effect_byte == 0x0E:
-                    efx = "E"  # TODO: see how it's treated in .mod files
+                    efx = "E"  # Extended effects, sub-effect in param high nibble
 
                 elif effect_byte == 0x10:
-                    efx = "G"
+                    efx = "G"  # Set global volume
 
                 elif effect_byte == 0x11:
-                    efx = "H"
+                    efx = "H"  # Global volume slide
 
                 elif effect_byte == 0x15:
-                    efx = "L"
+                    efx = "L"  # Set envelope position
 
                 elif effect_byte == 0x19:
-                    efx = "P"
+                    efx = "P"  # Panning slide
 
                 elif effect_byte == 0x1B:
-                    efx = "R"
+                    efx = "R"  # Multi retrig note
 
                 elif effect_byte == 0x1D:
-                    efx = "T"
+                    efx = "T"  # Tremor
+
+                elif effect_byte == 0x21:
+                    efx = "X"  # Extra fine portamento (X1x=up, X2x=down)
 
                 else:
                     raise NotImplementedError(f"Invalid effect type {effect_byte:02X}.")
 
                 return efx
 
-            def get_efx_param(effect_param_byte):
-                #TODO how are efx E and X treated?
-                #TODO see * cases in xm.pdf
-                return effect_param_byte
+            def get_efx_param(effect_type, effect_param_byte):
+                # For most effects, the parameter is the full byte (00-FF), e.g. B1A
+                #
+                # For effects E and X, the parameter byte is split into two nibbles:
+                #   - High nibble: sub-effect type
+                #   - Low nibble: actual parameter (0-F)
+                #
+                # Effect E sub-effects (from xm.txt):
+                #   E1x - Fine porta up
+                #   E2x - Fine porta down
+                #   E3x - Set gliss control
+                #   E4x - Set vibrato control
+                #   E5x - Set finetune
+                #   E6x - Set loop begin/loop
+                #   E7x - Set tremolo control
+                #   E9x - Retrig note
+                #   EAx - Fine volume slide up
+                #   EBx - Fine volume slide down
+                #   ECx - Note cut
+                #   EDx - Note delay
+                #   EEx - Pattern delay
+                #
+                # Effect X sub-effects:
+                #   X1x - Extra fine porta up
+                #   X2x - Extra fine porta down
+                #
+                if effect_type == "E" or effect_type == "X":
+                    sub_effect = (effect_param_byte >> 4) & 0x0F
+                    param = effect_param_byte & 0x0F
+                    return f"{sub_effect:01X}{param:01X}"
+                else:
+                    return f"{effect_param_byte:02X}"
 
             self.patterns = []
 
@@ -246,7 +281,7 @@ class XMSong(Song):
                 print("")
 
                 if pattern_data[cur_pat_idx:cur_pat_idx + 4][0] != 9:
-                    raise NotImplementedError(f"Unsupported pattern header length.")
+                    raise NotImplementedError(f"Unsupported pattern header length: {pattern_data[cur_pat_idx:cur_pat_idx + 4][0]}.")
 
                 if pattern_data[cur_pat_idx+4] != 0:
                     raise NotImplementedError(f"Unsupported packing type.")
@@ -305,7 +340,7 @@ class XMSong(Song):
 
                     if not is_packed or (is_packed and packed_byte & 0x10):
                         byte_idx += 1
-                        effect = f"{effect}{get_efx_param(pattern_data[byte_idx]):02X}"
+                        effect = f"{effect}{get_efx_param(effect, pattern_data[byte_idx])}"
 
                     # pretty print
                     if period == '':
@@ -331,18 +366,6 @@ class XMSong(Song):
                     # note.effect = effect
                     # note.volume = volume_val
                     # note.volume_cmd = volume_cmd
-
-        #                 e_type, e_param = MODSong.get_effect_from_note(note_raw)
-
-        #                 if e_type != 0 or e_param != 0:
-
-        #                     # dirty way for converting hex number to string... e.g. 0xF1 -> "F1"
-        #                     note.effect = hex(e_type).lstrip("0x").upper() 
-        #                     # note.effect += hex(e_param)[2:].upper()  # dunno why i was doing this...
-        #                     note.effect += f"{e_param:02X}"
-                            
-        #                     if e_type == 0:  # arpeggio effect
-        #                         note.effect = "0" + note.effect
                     
                     pat.data[c][r] = note
 
@@ -353,7 +376,7 @@ class XMSong(Song):
                     if c == n_channels:
                         c = 0
                         r += 1
-                        print("")
+                        # print("")
 
                     if byte_idx == cur_pat_idx + 9 + pattern_data_size:
                         break  # next pattern

@@ -1,4 +1,5 @@
 docs/
+dev/
 uv.lock
 .python-version
 

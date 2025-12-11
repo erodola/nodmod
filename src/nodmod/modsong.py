@@ -649,7 +649,6 @@ class MODSong(Song):
         :param include_loops: True to also count the rows that get played in loops.
         :return: The effective number of rows that gets played in the pattern.
         """
-
         if pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
@@ -704,7 +703,6 @@ class MODSong(Song):
         :param channel: The channel index to mute, 1 to 4.
         :return: None.
         """
-
         if channel <= 0 or channel > MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel}")
 
@@ -726,7 +724,6 @@ class MODSong(Song):
         :param note: A 4-byte note.
         :return: The sample number.
         """
-
         u4 = note[0] & 0xF0  # upper 4 bits of sample number
         l4 = note[2] & 0xF0  # lower 4 bits
         return u4 | (l4 >> 4)
@@ -740,7 +737,6 @@ class MODSong(Song):
         :param note: A 4-byte note.
         :return: A tuple (int, int) containing the effect type and parameter.
         """
-
         return note[2] & 0x0F, note[3]
 
     @staticmethod
@@ -751,7 +747,6 @@ class MODSong(Song):
         :param note: A 4-byte note.
         :return: The note period (pitch), or an empty string if no pitch is specified.
         """
-
         period_raw = ((note[0] & 0x0F) << 8) | note[1]
         if period_raw != 0:
             return MODSong.PERIOD_TABLE[period_raw]
@@ -767,7 +762,6 @@ class MODSong(Song):
         :param channel: The channel index to read from, 0-based.
         :return: The note object.
         """
-
         if row < 0 or row >= MODSong.ROWS:
             raise IndexError(f"Invalid row index {row}")
 
@@ -795,7 +789,6 @@ class MODSong(Song):
         :param bpm: The bpm value to set, from 32 to 255.
         :return: None.
         """
-
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm}")
 
@@ -811,7 +804,6 @@ class MODSong(Song):
         :param ticks: The speed value to set, from 1 to 31.
         :return: None.
         """
-
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks}")
 
@@ -828,7 +820,6 @@ class MODSong(Song):
         :param slide: The amount of notes to slide by, -255 to 255. 0 is ignored.
         :return: None.
         """
-
         if slide < -255 or slide > 255:
             raise ValueError(f"Invalid portamento slide {slide}")
 
@@ -850,7 +841,6 @@ class MODSong(Song):
         :param speed: The amount of notes per tick to slide by, 0 to 255.
         :return: None.
         """
-
         if speed < 0 or speed > 255:
             raise ValueError(f"Invalid tone portamento speed {speed}")
 
@@ -866,7 +856,6 @@ class MODSong(Song):
         :param slide: The volume slide to set, -15 to 15. 0 is ignored.
         :return: None.
         """
-
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid tone portamento slide {slide}")
         
@@ -888,7 +877,6 @@ class MODSong(Song):
         :param volume: The volume to set, 0 to 64.
         :return: None.
         """
-
         if volume < 0 or volume > 64:
             raise ValueError(f"Invalid volume {volume}")
 
@@ -904,7 +892,6 @@ class MODSong(Song):
         :param slide: The volume slide to set, -15 to 15. 0 is ignored.
         :return: None.
         """
-
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid volume slide {slide}")
         
@@ -928,7 +915,6 @@ class MODSong(Song):
         :param depth: The vibrato depth (how much it oscillates), 0 to 15.
         :return: None.
         """
-
         if speed < 0 or speed > 15:
             raise ValueError(f"Invalid vibrato speed {speed}")
         
@@ -949,7 +935,6 @@ class MODSong(Song):
         :param slide: The volume slide to set, -15 to 15. 0 is ignored.
         :return: None.
         """
-
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid vibrato slide {slide}")
         
@@ -973,7 +958,6 @@ class MODSong(Song):
         :param depth: The tremolo depth (how much it oscillates), 0 to 15.
         :return: None.
         """
-
         if speed < 0 or speed > 15:
             raise ValueError(f"Invalid tremolo speed {speed}")
         
