@@ -15,6 +15,7 @@ class MODSong(Song):
     CHANNELS = 4
     SAMPLES = 31
     PATTERN_SIZE = ROWS * CHANNELS * 4
+    PAL_CLOCK = 7093789.2  # Hz
 
     # OpenMPT period table for Tuning 0, Normal
     PERIOD_TABLE = {
@@ -496,7 +497,6 @@ class MODSong(Song):
                  - the index of the added sample, from 1 to 31
                  - the corresponding sample object
         """
-
         if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}.")
         
@@ -517,6 +517,90 @@ class MODSong(Song):
         self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
 
         return sample_idx, self.samples[sample_idx - 1]
+    
+    def _get_effective_sample_rate(self, smp: Sample, period: str = "C-5") -> int:
+        """
+        Returns the effective sample rate of the given sample based on its finetune value
+        and the reference period.
+
+        :param smp: The sample object.
+        :param period: The period to use as reference pitch (default "C-5").
+        :return: The effective sample rate in Hz.
+        """
+        # calculate the base frequency for the reference period.
+        # frequency = PAL_CLOCK / (period * 2)
+        base_freq = MODSong.PAL_CLOCK / (MODSong.INV_PERIOD_TABLE[period] * 2)
+        
+        # account for finetune (-8 to +7, stored as 0-15).
+        # finetune shifts the pitch by 1/8 of a semitone per unit
+        finetune = smp.finetune
+        if finetune > 7:  # Convert from 0-15 to -8 to +7
+            finetune = finetune - 16
+        
+        # each finetune unit is 1/8 of a semitone
+        # 2^(finetune / (8 * 12)) gives the frequency multiplier
+        finetune_multiplier = 2 ** (finetune / 96.0)
+        
+        # calculate the effective sample rate
+        effective_sample_rate = int(base_freq * finetune_multiplier)
+
+        return effective_sample_rate
+    
+    def get_sample_duration(self, sample_idx: int, period: str = "C-5") -> float:
+        """
+        Returns the duration of the sample at the given index in seconds.
+        The duration is computed based on the effective sample rate, which depends on the finetune value
+        and the reference period.
+
+        :param sample_idx: The sample index to query, 1 to 31.
+        :param period: The period to use as reference pitch (default "C-5").
+        :return: The sample duration in seconds.
+        """
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
+
+        smp = self.samples[sample_idx - 1]
+
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+        
+        effective_sample_rate = self._get_effective_sample_rate(smp, period)
+        duration = len(smp.waveform) / effective_sample_rate
+
+        return duration
+
+    def save_sample(self, sample_idx: int, fname: str, period: str = "C-5"):
+        """
+        Saves the sample at the given index as a WAV file.
+        The WAV file will be saved at a sample rate such that when played back at 44100 Hz,
+        it will sound at the correct pitch corresponding to the reference period.
+
+        :param sample_idx: The sample index to save, 1 to 31.
+        :param fname: The complete file path to the output .wav file.
+        :param period: The period to use as reference pitch (default "C-5").
+        :return: None.
+        """
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
+
+        smp = self.samples[sample_idx - 1]
+
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+        
+        effective_sample_rate = self._get_effective_sample_rate(smp, period)
+        
+        audio = pydub.AudioSegment(
+            data=smp.waveform.tobytes(),
+            sample_width=1,
+            frame_rate=effective_sample_rate,
+            channels=1
+        )
+        
+        # export at standard 44100 Hz (pydub will resample automatically)
+        audio = audio.set_frame_rate(44100)
+        
+        audio.export(fname, format="wav")
 
     def get_sample(self, sample_idx: int) -> Sample:
         """
@@ -525,7 +609,6 @@ class MODSong(Song):
         :param sample_idx: The sample index to retrieve, 1 to 31.
         :return: The sample object.
         """
-
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}")
 
@@ -539,7 +622,6 @@ class MODSong(Song):
         :param sample_idx: The sample index to remove, 1 to 31.
         :return: None.
         """
-
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}")
 
@@ -553,7 +635,6 @@ class MODSong(Song):
         :param sample_idx: The sample index to be kept, 1 to 31.
         :return: None.
         """
-
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}")
 
@@ -623,7 +704,6 @@ class MODSong(Song):
         if pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
-        effective_rows = 0
         loop_start_row = 0  # used by E6x effect
 
         data = copy.deepcopy(self.patterns[self.pattern_seq[pattern]].data)
@@ -669,7 +749,7 @@ class MODSong(Song):
     def clear_channel(self, channel: int):
         """
         Clears completely a specified channel in the entire song.
-        WARNING: If you use this as a way to mute a channel, be careful because it also deletes global effects like bpm.
+        WARNING: Don't use this as a way to mute channels, as it also removes global effects.
 
         :param channel: The channel index to mute, 1 to 4.
         :return: None.
@@ -680,6 +760,38 @@ class MODSong(Song):
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
                 self.patterns[p].data[channel - 1][r] = Note()
+
+    def mute_channel(self, channel: int):
+        """
+        Mutes a specified channel in the entire song while preserving global effects.
+        This clears notes, instruments, and channel-specific effects but keeps global effects
+        like speed/BPM changes (Fxx), pattern breaks (Bxx), and position jumps (Dxx).
+
+        :param channel: The channel index to mute, 1 to 4.
+        :return: None.
+        """
+        if channel <= 0 or channel > MODSong.CHANNELS:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        for p in range(len(self.patterns)):
+            for r in range(MODSong.ROWS):
+                note = self.patterns[p].data[channel - 1][r]
+                
+                # Check if this note has a global effect that should be preserved
+                global_effect = ""
+                if note.effect != "":
+                    effect_type = note.effect[0]
+                    # Preserve global effects: F (speed/BPM), B (pattern break), D (position jump)
+                    if effect_type in ['F', 'B', 'D']:
+                        global_effect = note.effect
+                
+                # Create a new empty note
+                new_note = Note()
+                # Restore the global effect if there was one
+                if global_effect:
+                    new_note.effect = global_effect
+                
+                self.patterns[p].data[channel - 1][r] = new_note
 
     '''
     -------------------------------------

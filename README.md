@@ -41,11 +41,10 @@ from nodmod import MODSong
 song = MODSong()
 song.load_from_file("music/spice_it_up.mod")
 
-# Clear out the first two channels as a way to mute them
-song.clear_channel(1)
-song.clear_channel(2)
+song.mute_channel(3)
+song.mute_channel(4)
 
-song.save_as_mod("music/ch3_4.mod")
+song.save_as_mod("music/ch1_2.mod")
 ```
 
 ## Requirements
