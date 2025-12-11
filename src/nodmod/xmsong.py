@@ -530,17 +530,17 @@ class XMSong(Song):
             # ----------------------------
 
             header = data[:60]
-            magic_string = header[:17].decode('utf-8')
+            magic_string = header[:17].decode('ascii')
 
             if magic_string != "Extended Module: ":  # non-standard xm file
                 raise NotImplementedError(f"Not an XM module! Magic string: {magic_string}.")
             
-            self.songname = header[17:37].decode('utf-8').rstrip(' ')
+            self.songname = header[17:37].decode('latin-1').rstrip(' \x00')
 
             if header[37] != 0x1A:
                 raise NotImplementedError("Invalid XM file format.")
             
-            self.tracker_name = header[38:58].decode('utf-8').rstrip(' ')
+            self.tracker_name = header[38:58].decode('latin-1').rstrip(' \x00')
             
             version = int.from_bytes(header[58:60], byteorder='big', signed=False)
             if version < 0x0104:
