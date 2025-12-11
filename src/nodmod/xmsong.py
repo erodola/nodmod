@@ -1,6 +1,7 @@
 import array
 import copy
 import shutil
+import warnings
 
 from nodmod import Song
 from nodmod import XMSample
@@ -205,6 +206,8 @@ class XMSong(Song):
                 effect_type = 0x19
             elif effect_char == 'R':
                 effect_type = 0x1B
+            elif effect_char == 'K':
+                effect_type = 0x14
             elif effect_char == 'T':
                 effect_type = 0x1D
             elif effect_char == 'X':
@@ -689,7 +692,7 @@ class XMSong(Song):
 
                 return volume_cmd, volume_val
 
-            def get_efx_type(effect_byte) -> str:
+            def get_efx_type(effect_byte, pat_num, row, chan) -> str:
 
                 if effect_byte <= 0x0D or effect_byte == 0x0F:
                     efx = f"{effect_byte:01X}"  
@@ -716,6 +719,9 @@ class XMSong(Song):
                 elif effect_byte == 0x1B:
                     efx = "R"  # Multi retrig note
 
+                elif effect_byte == 0x14:
+                    efx = "K"  # Key off (parameter value is ignored)
+
                 elif effect_byte == 0x1D:
                     efx = "T"  # Tremor
 
@@ -723,7 +729,9 @@ class XMSong(Song):
                     efx = "X"  # Extra fine portamento (X1x=up, X2x=down)
 
                 else:
-                    raise NotImplementedError(f"Invalid effect type {effect_byte:02X}.")
+                    if verbose:
+                        warnings.warn(f"Non-standard effect type {effect_byte:02X} at pattern {pat_num}, row {row}, channel {chan}. Ignoring.")
+                    efx = ""  # Ignore non-standard effect
 
                 return efx
 
@@ -779,10 +787,17 @@ class XMSong(Song):
                 # each pattern has a different size in bytes due to packing
                 pattern_data_size = int.from_bytes(pattern_data[cur_pat_idx+7:cur_pat_idx+9], byteorder='little', signed=False)
 
-                if pattern_data_size == 0:
-                    raise NotImplementedError(f"Empty pattern.")
-
                 pat = Pattern(n_rows, self.n_channels)
+
+                # Handle empty patterns (packed_size == 0 means no note data)
+                if pattern_data_size == 0:
+                    # Initialize all notes as empty XMNote objects
+                    for c in range(self.n_channels):
+                        for r in range(n_rows):
+                            pat.data[c][r] = XMNote()
+                    self.patterns.append(pat)
+                    cur_pat_idx += 9  # Skip pattern header only
+                    continue
 
                 # Read the pattern data byte by byte.
                 # Notes are stored row-wise: first all notes across all channels for row 0, then row 1, etc.
@@ -818,16 +833,20 @@ class XMSong(Song):
                         byte_idx += 1
                         volume_cmd, volume_val = get_volume(pattern_data[byte_idx])
 
-                    if not is_packed or (is_packed and packed_byte & 0x08):
+                    has_effect_byte = not is_packed or (is_packed and packed_byte & 0x08)
+                    if has_effect_byte:
                         byte_idx += 1
-                        effect = get_efx_type(pattern_data[byte_idx])
+                        effect = get_efx_type(pattern_data[byte_idx], p, r, c)
 
                     if not is_packed or (is_packed and packed_byte & 0x10):
                         byte_idx += 1
                         # If we have a param but no effect type, use effect type 0 (arpeggio)
-                        if effect == '':
+                        # But only if we didn't just ignore a non-standard effect
+                        if effect == '' and not has_effect_byte:
+                            # No effect byte was present, but param is - use arpeggio
                             effect = '0'
-                        effect = f"{effect}{get_efx_param(effect, pattern_data[byte_idx])}"
+                        if effect != '':
+                            effect = f"{effect}{get_efx_param(effect, pattern_data[byte_idx])}"
 
                     # Create XM note with all parsed data
                     note = XMNote()
