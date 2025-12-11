@@ -44,6 +44,7 @@ class Note:
     """
     A note is a sample that is played at a specific pitch (period), possibly with envelopes.
     Every note can be modified by effects.
+    This base class is used for MOD files.
     """
 
     def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = ''):
@@ -72,6 +73,66 @@ class Note:
     
     def is_empty(self) -> bool:
         return self.instrument_idx == 0 and self.period == '' and self.effect == ''
+
+
+class XMNote(Note):
+    """
+    Extended note class for XM files.
+    XM notes have an additional volume column with its own command and value.
+    
+    Volume column commands:
+        'v' - Set volume (0-64)
+        'd' - Volume slide down
+        'c' - Volume slide up  
+        'b' - Fine volume slide down
+        'a' - Fine volume slide up
+        'u' - Vibrato speed
+        'h' - Vibrato depth
+        'p' - Set panning position
+        'l' - Panning slide left
+        'r' - Panning slide right
+        'g' - Tone portamento
+    """
+
+    def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = '',
+                 vol_cmd: str = '', vol_val: int = -1):
+        super().__init__(instrument_idx, period, effect)
+        
+        # XM-specific: volume column command and value
+        # vol_cmd is a single character (v, d, c, b, a, u, h, p, l, r, g) or empty
+        # vol_val is 0-64 for most commands, or -1 if no volume column data
+        self.vol_cmd = vol_cmd
+        self.vol_val = vol_val
+
+    def __repr__(self):
+        s = ''
+        # Period
+        if self.period == '':
+            s += '--- '
+        elif self.period == 'off':
+            s += '=== '
+        else:
+            s += self.period + ' '
+        # Instrument
+        if self.instrument_idx == 0:
+            s += '-- '
+        else:
+            s += f"{self.instrument_idx:02d} "
+        # Volume column
+        if self.vol_cmd == '':
+            s += '-- '
+        else:
+            s += f"{self.vol_cmd}{self.vol_val:02d} " if self.vol_val >= 0 else '-- '
+        # Effect
+        if self.effect == '':
+            s += '---'
+        else:
+            s += self.effect
+        return s
+    
+    def is_empty(self) -> bool:
+        return self.instrument_idx == 0 and self.period == '' and \
+               self.effect == '' and self.vol_cmd == ''
 
 
 class Song(ABC):

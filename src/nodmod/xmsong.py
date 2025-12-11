@@ -1,7 +1,7 @@
 from nodmod import Song
 from nodmod import Sample
 from nodmod import Pattern
-from nodmod import Note
+from nodmod import XMNote
 
 class XMSong(Song):
     
@@ -123,12 +123,12 @@ class XMSong(Song):
 
                 return period_
 
-            def get_instrument(instrument_byte) -> str:
+            def get_instrument(instrument_byte) -> int:
 
                 if instrument_byte > 127:
                     raise NotImplementedError("Invalid instrument value.")
                             
-                return f"{instrument_byte:02d}"
+                return instrument_byte
 
             def get_volume(volume_byte) -> tuple[str, int]:
 
@@ -307,7 +307,7 @@ class XMSong(Song):
 
                     packed_byte = pattern_data[byte_idx]
 
-                    instrument = ''
+                    instrument = 0
                     effect = ''
                     period = ''
                     volume_cmd = ''
@@ -349,23 +349,20 @@ class XMSong(Song):
                         print('==  ', end='')
                     else:
                         print(f"{period} ", end='')
-                    print(f"{'--' if instrument=='' else instrument} {'-' if volume_cmd=='' else volume_cmd}", end='')
+                    print(f"{'--' if instrument==0 else f'{instrument:02d}'} {'-' if volume_cmd=='' else volume_cmd}", end='')
                     if volume_val == -1:
                         print('-- ', end='')
                     else:
                         print(f"{volume_val:02d} ", end='')
                     print(f"{'---' if effect=='' else effect} | ", end='')
 
-                    # FIXME: redefine note class for MOD and XM
-                    note = Note()
-
+                    # Create XM note with all parsed data
+                    note = XMNote()
                     note.instrument_idx = instrument
                     note.period = period
-
-                    # TODO
-                    # note.effect = effect
-                    # note.volume = volume_val
-                    # note.volume_cmd = volume_cmd
+                    note.effect = effect
+                    note.vol_cmd = volume_cmd
+                    note.vol_val = volume_val
                     
                     pat.data[c][r] = note
 
@@ -376,7 +373,7 @@ class XMSong(Song):
                     if c == n_channels:
                         c = 0
                         r += 1
-                        # print("")
+                        print("")
 
                     if byte_idx == cur_pat_idx + 9 + pattern_data_size:
                         break  # next pattern
