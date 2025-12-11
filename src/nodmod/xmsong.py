@@ -22,6 +22,11 @@ class XMSong(Song):
     def file_extension(self) -> str:
         return 'xm'
     
+    @property
+    def uses_linear_frequency(self) -> bool:
+        """True if using linear frequency table, False for Amiga frequency table."""
+        return self.flags & 0x01 == 1
+    
     def __init__(self):
         super().__init__()
         
@@ -29,6 +34,12 @@ class XMSong(Song):
         # Each Instrument can contain multiple Sample objects
         self.instruments: list[Instrument] = []
         self.n_instruments = 0  # Number from header (includes empty instruments)
+        
+        # XM header fields (needed for file re-saving)
+        self.song_restart = 0      # Pattern position to restart from when song loops
+        self.flags = 0             # bit 0: 0 = Amiga frequency table, 1 = Linear frequency table
+        self.default_speed = 6     # Default ticks per row
+        self.default_tempo = 125   # Default BPM
         
         # Source file path (used for save_to_file until XM writing is implemented)
         self._source_file: str | None = None
@@ -108,9 +119,11 @@ class XMSong(Song):
             # Load variable-size header data
             # ----------------------------
 
-            # song restart position
-            # TODO: use this
-            song_restart = int.from_bytes(data[66:68], byteorder='little', signed=False)
+            # Header size (4 bytes at offset 60) - relative to offset 60, not file start
+            header_size = int.from_bytes(data[60:64], byteorder='little', signed=False)
+
+            # song restart position (where to loop back to)
+            self.song_restart = int.from_bytes(data[66:68], byteorder='little', signed=False)
 
             # number of channels
             n_channels = int.from_bytes(data[68:70], byteorder='little', signed=False)
@@ -124,16 +137,13 @@ class XMSong(Song):
             self.instruments = [Instrument() for _ in range(self.n_instruments)]
 
             # 0 = Amiga frequency table; 1 = Linear frequency table
-            # TODO: use this
-            flags = int.from_bytes(data[74:76], byteorder='little', signed=False)
+            self.flags = int.from_bytes(data[74:76], byteorder='little', signed=False)
             
             # speed / ticks per row
-            # TODO: use this
-            speed = int.from_bytes(data[76:78], byteorder='little', signed=False)
+            self.default_speed = int.from_bytes(data[76:78], byteorder='little', signed=False)
 
-            # tempo
-            # TODO: use this
-            tempo = int.from_bytes(data[78:80], byteorder='little', signed=False)
+            # tempo / BPM
+            self.default_tempo = int.from_bytes(data[78:80], byteorder='little', signed=False)
 
             # ----------------------------
             # Load pattern preamble data
@@ -323,7 +333,8 @@ class XMSong(Song):
 
             self.patterns = []
 
-            pattern_data = data[336:]
+            # Pattern data starts at offset 60 + header_size
+            pattern_data = data[60 + header_size:]
             cur_pat_idx = 0
 
             for p in range(n_unique_patterns):
