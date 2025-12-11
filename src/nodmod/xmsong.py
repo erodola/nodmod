@@ -1,12 +1,25 @@
 from nodmod import Song
 from nodmod import Sample
+from nodmod import Instrument
 from nodmod import Pattern
 from nodmod import XMNote
 
 class XMSong(Song):
+    """
+    XM (FastTracker 2 Extended Module) song format.
+    
+    Unlike MOD files where notes reference samples directly, XM files use instruments.
+    Each instrument can contain 0, 1, or many samples. Notes in XM files reference
+    instruments by index, and the instrument determines which sample(s) to play.
+    """
     
     def __init__(self):
-        pass
+        super().__init__()
+        
+        # XM-specific: instruments list (notes reference instruments, not samples directly)
+        # Each Instrument can contain multiple Sample objects
+        self.instruments: list[Instrument] = []
+        self.n_instruments = 0  # Number from header (includes empty instruments)
 
     '''
     -------------------------------------
@@ -66,11 +79,11 @@ class XMSong(Song):
                 raise NotImplementedError(f"Too many channels: {n_channels}.")
 
             # number of instruments (note : some instruments may be empty)
-            # TODO: use this
-            n_instruments = int.from_bytes(data[72:74], byteorder='little', signed=False)
-            if n_instruments > 128:
-                raise NotImplementedError(f"Too many instruments: {n_instruments}.")
-            
+            self.n_instruments = int.from_bytes(data[72:74], byteorder='little', signed=False)
+            if self.n_instruments > 128:
+                raise NotImplementedError(f"Too many instruments: {self.n_instruments}.")
+            self.instruments = [Instrument() for _ in range(self.n_instruments)]
+
             # 0 = Amiga frequency table; 1 = Linear frequency table
             # TODO: use this
             flags = int.from_bytes(data[74:76], byteorder='little', signed=False)

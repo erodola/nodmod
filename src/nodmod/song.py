@@ -25,6 +25,9 @@ class Sample:
     """
     A sample is a digitized soundwave plus some additional attributes.
     Samples are played as notes in a song.
+    
+    For MOD files: Samples are referenced directly by notes.
+    For XM files: Samples are contained within Instruments.
     """
 
     def __init__(self):
@@ -41,6 +44,44 @@ class Sample:
         # Tells which sample pitch corresponds to true G (Sol).
         # Can be estimated, e.g., with MODSong.tune_sample().
         self.tune = ''
+
+
+class Instrument:
+    """
+    An instrument is a container for samples, used in XM files.
+    
+    In MOD files, there is no concept of instruments - notes reference samples directly.
+    In XM files, notes reference instruments, and each instrument can contain:
+      - 0 samples (stub instrument, often used just for storing a name/comment)
+      - 1 sample (simple instrument)
+      - Multiple samples (e.g., different samples for different note ranges)
+    
+    The instrument also contains envelope and other playback settings (to be added later).
+    """
+
+    def __init__(self):
+        self.name = ""
+        
+        # List of Sample objects belonging to this instrument
+        self.samples: list[Sample] = []
+        
+        # Sample-to-note mapping: which sample index to use for each note (0-95)
+        # In XM, this maps MIDI-like note numbers to sample indices within self.samples
+        # If empty, all notes use sample index 0 (or no sample if samples list is empty)
+        self.sample_map: list[int] = []
+        
+        # Volume envelope (to be implemented)
+        # Panning envelope (to be implemented)
+        # Other XM instrument properties (to be implemented)
+
+    @property
+    def n_samples(self) -> int:
+        """Return the number of samples in this instrument."""
+        return len(self.samples)
+    
+    def is_empty(self) -> bool:
+        """Return True if this instrument has no samples (stub instrument)."""
+        return len(self.samples) == 0
 
 
 class Note:
