@@ -17,6 +17,9 @@ class Pattern:
         # use it as data[channel][row]
         self.data = [[Note() for _ in range(n_rows)] for _ in range(n_channels)]
 
+    def __len__(self) -> int:
+        return self.n_rows
+
 
 class Sample:
     """

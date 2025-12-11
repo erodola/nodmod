@@ -384,69 +384,7 @@ class XMSong(Song):
                 cur_pat_idx += 9 + pattern_data_size
 
 
-        #     # ----------------------------
-        #     # Load sample data
-        #     # ----------------------------
-
-        #     sample_lengths = [0] * MODSong.SAMPLES
-        #     self.n_actual_samples = 0
-
-        #     self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
-
-        #     # all the waveforms are stored right after the pattern data
-        #     waveform_idx = 1084 + n_unique_patterns * MODSong.ROWS * MODSong.CHANNELS * 4
-
-        #     for i in range(MODSong.SAMPLES):
-
-        #         idx = 20 + i * 30 + 22
-        #         sample_lengths[i] = 2 * int.from_bytes(data[idx:idx + 2], byteorder='big', signed=False)
-
-        #         # some docs say this is equivalent to sample length = 0. not dealing with this now.
-        #         assert sample_lengths[i] != 1
-
-        #         if sample_lengths[i] > 0:
-        #             self.n_actual_samples += 1
-
-        #         smp = Sample()
-        #         smp.name = data[idx - 22:idx].rstrip(b'\x00').decode('utf-8')
-
-        #         # Lower four bits are the finetune value, stored as a signed 4-bit number.
-        #         # The upper four bits are not used.
-        #         smp.finetune = data[idx + 2]
-        #         smp.finetune &= 0x0F
-
-        #         # Volume range is 0x00-0x40 (or 0-64 decimal)
-        #         smp.volume = data[idx + 3]
-
-        #         smp.repeat_point = 2 * int.from_bytes(data[idx + 4:idx + 6], byteorder='big', signed=False)
-        #         smp.repeat_len = 2 * int.from_bytes(data[idx + 6:idx + 8], byteorder='big', signed=False)
-
-        #         # The digitized samples are raw 8-bit signed data.
-
-        #         if sample_lengths[i] == 0:
-        #             smp.waveform = array.array('b')
-        #         else:
-        #             smp.waveform = data[waveform_idx:waveform_idx + sample_lengths[i]]
-        #             smp.waveform = array.array(
-        #                 'b',
-        #                 smp.waveform)  # the bytearray string is reinterpreted as signed 8bit values
-        #             waveform_idx += sample_lengths[i]
-
-        #         self.samples[i] = smp
-
-        #     # ----------------------------
-        #     # Do some sanity checks
-        #     # ----------------------------
-
-        #     # Some non-standard modules have extra patterns saved in the song data.
-        #     # The MOD standard does not allow storing patterns beyond the maximum pattern number that is actually used.
-        #     patterns_size = n_unique_patterns * MODSong.ROWS * MODSong.CHANNELS * 4
-        #     samples_size = sum(sample_lengths)
-        #     predicted_size = patterns_size + samples_size
-        #     actual_size = len(data[1084:])
-        #     if predicted_size != actual_size:
-        #         n_extra_patterns = int((actual_size - predicted_size) / (MODSong.ROWS * MODSong.CHANNELS * 4))
-        #         raise NotImplementedError(f"The module has {n_extra_patterns} unexpected extra patterns.")
+        
 
         if verbose:
             print('done.')
