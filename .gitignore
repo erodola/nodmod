@@ -1,6 +1,8 @@
 docs/
+dev/
 uv.lock
 .python-version
+*.bak
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

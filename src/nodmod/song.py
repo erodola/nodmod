@@ -1,84 +1,29 @@
+"""
+Abstract base class for tracker song formats.
+
+The Song class defines the common interface for all tracker formats (MOD, XM, etc.).
+Format-specific implementations are in modsong.py, xmsong.py, etc.
+"""
+
 import copy
-import array
 import os
+import shutil
+import subprocess
 from abc import ABC, abstractmethod
 
+from .types import Note
 
-class Pattern:
-    """
-    A pattern is a page of notes, and is part of a song.
-    It is made of a number of channels of same length; each channel stores a note per row.
-    """
-
-    def __init__(self, n_rows: int, n_channels: int):
-        self.n_rows = n_rows
-        self.n_channels = n_channels
-
-        # use it as data[channel][row]
-        self.data = [[Note() for _ in range(n_rows)] for _ in range(n_channels)]
-
-
-class Sample:
-    """
-    A sample is a digitized soundwave plus some additional attributes.
-    Samples are played as notes in a song.
-    """
-
-    def __init__(self):
-        self.name = ""
-
-        # MOD attributes
-        self.finetune = 0
-        self.volume = 64
-        self.repeat_point = 0
-        self.repeat_len = 0
-
-        self.waveform = array.array('b')  # signed integers (8-bit audio)
-
-        # Tells which sample pitch corresponds to true G (Sol).
-        # Can be estimated, e.g., with MODSong.tune_sample().
-        self.tune = ''
-
-
-class Note:
-    """
-    A note is a sample that is played at a specific pitch (period), possibly with envelopes.
-    Every note can be modified by effects.
-    """
-
-    def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = ''):
-
-        # note that for mod files, instrument and sample are synonymous
-        self.instrument_idx = instrument_idx
-
-        self.period = period
-        self.effect = effect
-
-    def __repr__(self):
-        s = ''
-        if self.period == '':
-            s += '--- '
-        else:
-            s += self.period + ' '
-        if self.instrument_idx == 0:
-            s += '-- '
-        else:
-            s += f"{self.instrument_idx:02d}" + ' '
-        if self.effect == '':
-            s += '---'
-        else:
-            s += self.effect
-        return s
-    
-    def is_empty(self) -> bool:
-        return self.instrument_idx == 0 and self.period == '' and self.effect == ''
+__all__ = ['Song']
 
 
 class Song(ABC):
     """
     A song is a collection of patterns played in a specific sequence, possibly with repetitions.
-    In addition, songs also store the samples that are used to play the notes.
-    Songs can be loaded from file (e.g., MOD format) or composed from scratch.
+    Songs can be loaded from file (e.g., MOD, XM format) or composed from scratch.
+    
+    Note: Sample/instrument storage is format-specific:
+    - MODSong stores samples directly (notes reference samples)
+    - XMSong stores instruments (notes reference instruments, which contain samples)
     """
 
     PERIOD_SEQ = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-']
@@ -89,11 +34,6 @@ class Song(ABC):
         self.songname = "new song"
         self.patterns = []
         self.pattern_seq = []  # The actual sequence of patterns making up the song.
-
-        # To be consistent with the module standard, we always store as many samples
-        # as the maximum allowed, possibly with empty slots within the sample bank.
-        self.samples = []
-        self.n_actual_samples = 0  # The number of non-empty samples present in the song.
 
     '''
     -------------------------------------
@@ -134,6 +74,75 @@ class Song(ABC):
         song_name = os.path.splitext(song_name)[0]
         # print(f"{filename} | {artist_name} | {song_name}")
         return artist_name, song_name
+
+    @property
+    @abstractmethod
+    def file_extension(self) -> str:
+        """
+        Returns the file extension for this song format (e.g., 'mod', 'xm').
+        """
+        pass
+
+    @abstractmethod
+    def save_to_file(self, fname: str, verbose: bool = True):
+        """
+        Saves the song to a file in its native format.
+
+        :param fname: Complete file path.
+        :param verbose: False for silent saving.
+        """
+        pass
+
+    def render_as_wav(self, fname: str, verbose: bool = True, cleanup: bool = True):
+        """
+        Renders the current song as a WAV file.
+        Note: Requires openmpt123 or ffmpeg to be installed and available in PATH.
+
+        :param fname: Complete path of the output WAV file.
+        :param verbose: False for silent rendering.
+        :param cleanup: True to remove the temporary module file generated for rendering.
+        :return: None.
+        """
+
+        if verbose:
+            print("Rendering as wav... ", end='', flush=True)
+
+        if os.path.isfile(fname):
+            os.remove(fname)
+
+        noext = os.path.splitext(fname)[0]
+        ext = self.file_extension
+        temp_file = f"{noext}.{ext}"
+        temp_wav = f"{temp_file}.wav"
+
+        if os.path.isfile(temp_file):
+            os.remove(temp_file)
+
+        self.save_to_file(temp_file, verbose=False)
+
+        if os.path.isfile(temp_wav):
+            os.remove(temp_wav)
+
+        try:
+            subprocess.run(
+                ["openmpt123", temp_file, "-q", "--channels", "1", "--samplerate", "44100", "--render"],
+                check=True
+            )
+        except FileNotFoundError:
+            try:
+                subprocess.run(["ffmpeg", "-i", temp_file, temp_wav], check=True)
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    "Neither openmpt123 nor ffmpeg found. Install one of them to render WAV files."
+                ) from e
+
+        shutil.move(temp_wav, fname)
+
+        if cleanup:
+            os.remove(temp_file)
+
+        if verbose:
+            print("done.")
 
     @abstractmethod
     def timestamp(self) -> list[list[float, int, int]]:

@@ -5,8 +5,6 @@ from nodmod import Pattern
 from nodmod import Note
 import array
 import os
-import subprocess
-import shutil
 import pydub  # needed for loading WAV samples
 import copy
 
@@ -39,6 +37,10 @@ class MODSong(Song):
 
     INV_PERIOD_TABLE = {value: key for key, value in PERIOD_TABLE.items()}
 
+    @property
+    def file_extension(self) -> str:
+        return 'mod'
+
     def __init__(self):
         """
         Initializes the song with one empty pattern and an empty sample bank.
@@ -48,16 +50,25 @@ class MODSong(Song):
 
         self.patterns = [Pattern(n_rows=MODSong.ROWS, n_channels=MODSong.CHANNELS)]
         self.pattern_seq = [0]
-        self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
-
-    def copy(self) -> MODSong:  # TODO check if this actually works
         
+        # MOD files store samples directly (notes reference samples by index).
+        # We always store the maximum allowed slots, possibly with empty slots.
+        self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
+        self.n_actual_samples = 0  # The number of non-empty samples present in the song.
+
+    def copy(self) -> MODSong:
+        """
+        Creates a deep copy of this song.
+        
+        :return: A new MODSong instance with all data copied.
+        """
         new_song = MODSong()
         new_song.artist = self.artist
         new_song.songname = self.songname
         new_song.patterns = copy.deepcopy(self.patterns)
         new_song.pattern_seq = copy.deepcopy(self.pattern_seq)
         new_song.samples = copy.deepcopy(self.samples)
+        new_song.n_actual_samples = self.n_actual_samples
 
         return new_song
 
@@ -237,7 +248,7 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_as_mod(self, fname: str, verbose: bool = True):
+    def save_to_file(self, fname: str, verbose: bool = True):
         """
         Saves the song as a standard MOD file.
 
@@ -365,47 +376,8 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def render_as_wav(self, fname: str, verbose: bool = True, cleanup: bool = False):
-        """
-        Renders the current song as a WAV file.
-        Note: Requires openmpt123.exe to be installed in the current working directory.
-
-        :param fname: Complete path of the output WAV file.
-        :param verbose: False for silent rendering.
-        :param cleanup: True to remove the temporary MOD file generated for rendering.
-        :return: None.
-        """
-        if verbose:
-            print("Rendering as wav... ", end='', flush=True)
-
-        if os.path.isfile(fname):
-            os.remove(fname)
-
-        noext = os.path.splitext(fname)
-
-        if os.path.isfile(f"{noext[0]}.mod"):
-            os.remove(f"{noext[0]}.mod")
-
-        self.save_as_mod(f"{noext[0]}.mod", False)
-
-        if os.path.isfile(f"{noext[0]}.mod.wav"):
-            os.remove(f"{noext[0]}.mod.wav")
-
-        try:
-            subprocess.run(f"openmpt123.exe {noext[0]}.mod -q --channels 1 --samplerate 44100 --render", check=True)
-        except FileNotFoundError as _:
-            try:
-                subprocess.run([f"ffmpeg", "-i", f"{noext[0]}.mod", f"{noext[0]}.mod.wav"], check=True)
-            except FileNotFoundError as e:
-                raise FileNotFoundError(e)
-
-        shutil.move(f"{noext[0]}.mod.wav", fname)
-
-        if cleanup:
-            os.remove(f"{noext[0]}.mod")
-
-        if verbose:
-            print("done.")
+    # Alias for backwards compatibility
+    save_as_mod = save_to_file
     
     '''
     -------------------------------------
@@ -729,7 +701,6 @@ class MODSong(Song):
         :param include_loops: True to also count the rows that get played in loops.
         :return: The effective number of rows that gets played in the pattern.
         """
-
         if pattern >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern}")
 
@@ -874,7 +845,6 @@ class MODSong(Song):
         :param channel: The channel index to read from, 0-based.
         :return: The note object.
         """
-
         if row < 0 or row >= MODSong.ROWS:
             raise IndexError(f"Invalid row index {row}")
 
@@ -902,7 +872,6 @@ class MODSong(Song):
         :param bpm: The bpm value to set, from 32 to 255.
         :return: None.
         """
-
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm}")
 
@@ -918,7 +887,6 @@ class MODSong(Song):
         :param ticks: The speed value to set, from 1 to 31.
         :return: None.
         """
-
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks}")
 
@@ -935,7 +903,6 @@ class MODSong(Song):
         :param slide: The amount of notes to slide by, -255 to 255. 0 is ignored.
         :return: None.
         """
-
         if slide < -255 or slide > 255:
             raise ValueError(f"Invalid portamento slide {slide}")
 
@@ -957,7 +924,6 @@ class MODSong(Song):
         :param speed: The amount of notes per tick to slide by, 0 to 255.
         :return: None.
         """
-
         if speed < 0 or speed > 255:
             raise ValueError(f"Invalid tone portamento speed {speed}")
 
@@ -973,7 +939,6 @@ class MODSong(Song):
         :param slide: The volume slide to set, -15 to 15. 0 is ignored.
         :return: None.
         """
-
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid tone portamento slide {slide}")
         
@@ -995,7 +960,6 @@ class MODSong(Song):
         :param volume: The volume to set, 0 to 64.
         :return: None.
         """
-
         if volume < 0 or volume > 64:
             raise ValueError(f"Invalid volume {volume}")
 
@@ -1011,7 +975,6 @@ class MODSong(Song):
         :param slide: The volume slide to set, -15 to 15. 0 is ignored.
         :return: None.
         """
-
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid volume slide {slide}")
         
@@ -1035,7 +998,6 @@ class MODSong(Song):
         :param depth: The vibrato depth (how much it oscillates), 0 to 15.
         :return: None.
         """
-
         if speed < 0 or speed > 15:
             raise ValueError(f"Invalid vibrato speed {speed}")
         
@@ -1056,7 +1018,6 @@ class MODSong(Song):
         :param slide: The volume slide to set, -15 to 15. 0 is ignored.
         :return: None.
         """
-
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid vibrato slide {slide}")
         
@@ -1080,7 +1041,6 @@ class MODSong(Song):
         :param depth: The tremolo depth (how much it oscillates), 0 to 15.
         :return: None.
         """
-
         if speed < 0 or speed > 15:
             raise ValueError(f"Invalid tremolo speed {speed}")
         
