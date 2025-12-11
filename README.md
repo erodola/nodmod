@@ -1,10 +1,10 @@
 # 🎹 NodMOD
 
-NodMOD is a Python library for manipulating Amiga MOD files produced with the music trackers of yore.
+NodMOD is a Python library for manipulating MOD / XM files produced with the music trackers of yore.
 
 The library simplifies core operations, abstracting away from the intricacies of the MOD format.
 
- - Load and save MOD files
+ - Load and save MOD / XM files
  - Create, edit, duplicate, and delete patterns
  - Load WAV samples with automatic bitrate conversion
  - Full editing, down to the individual notes and effects
@@ -57,7 +57,7 @@ song.save_as_mod("music/ch1_2.mod")
 
 We seek to expand the library in several ways:
 
- - Add support for other formats: XM (*wip*), S3M, IT, MED, etc.
+ - Add support for other formats: IT, S3M, MED, etc.
  - More advanced functions for composing music
  - Build a script language
  - Improve usability
