@@ -26,7 +26,7 @@ class XMSong(Song):
     @property
     def uses_linear_frequency(self) -> bool:
         """True if using linear frequency table, False for Amiga frequency table."""
-        return self.flags & 0x01 == 1
+        return (self.flags & 0x01) == 1
     
     def __init__(self):
         super().__init__()
