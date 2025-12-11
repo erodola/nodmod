@@ -1,4 +1,5 @@
 import array
+import copy
 import shutil
 
 from nodmod import Song
@@ -36,6 +37,7 @@ class XMSong(Song):
         self.n_instruments = 0  # Number from header (includes empty instruments)
         
         # XM header fields (needed for file re-saving)
+        self.tracker_name = ""     # Name of tracker that created the file
         self.song_restart = 0      # Pattern position to restart from when song loops
         self.flags = 0             # bit 0: 0 = Amiga frequency table, 1 = Linear frequency table
         self.default_speed = 6     # Default ticks per row
@@ -44,11 +46,72 @@ class XMSong(Song):
         # Source file path (used for save_to_file until XM writing is implemented)
         self._source_file: str | None = None
 
+    def copy(self) -> 'XMSong':
+        """
+        Creates a deep copy of this song.
+        
+        :return: A new XMSong instance with all data copied.
+        """
+        new_song = XMSong()
+        
+        # Base Song attributes
+        new_song.artist = self.artist
+        new_song.songname = self.songname
+        new_song.patterns = copy.deepcopy(self.patterns)
+        new_song.pattern_seq = copy.deepcopy(self.pattern_seq)
+        
+        # XM-specific attributes
+        new_song.instruments = copy.deepcopy(self.instruments)
+        new_song.n_instruments = self.n_instruments
+        new_song.tracker_name = self.tracker_name
+        new_song.song_restart = self.song_restart
+        new_song.flags = self.flags
+        new_song.default_speed = self.default_speed
+        new_song.default_tempo = self.default_tempo
+        
+        # Note: _source_file is NOT copied - the copy is a new in-memory song
+        new_song._source_file = None
+        
+        return new_song
+
     '''
     -------------------------------------
     IMPORT AND EXPORT
     -------------------------------------
     '''
+
+    def save_as_ascii(self, fname: str, verbose: bool = True):
+        """
+        Writes the song as readable text with ASCII encoding.
+        
+        Format per note: | period instrument volume effect |
+        Example: | C-5 01 v64 A00 | --- -- -- --- |
+        
+        :param fname: Complete file path.
+        :param verbose: False for silent saving.
+        :return: None.
+        """
+        if verbose:
+            print(f'Saving to {fname}... ', end='', flush=True)
+
+        with open(fname, 'w', encoding='ascii') as file:
+            for seq_idx, pat_idx in enumerate(self.pattern_seq):
+                pat = self.patterns[pat_idx]
+                n_rows = len(pat.data[0]) if pat.data else 0
+                n_channels = len(pat.data)
+                
+                # Write pattern header
+                file.write(f"# Pattern {seq_idx} (unique pattern {pat_idx}): "
+                           f"{n_rows} rows, {n_channels} channels\n")
+                
+                for r in range(n_rows):
+                    for c in range(n_channels):
+                        file.write(f"| {pat.data[c][r]} ")
+                    file.write('|\n')
+                file.write('\n')
+
+        if verbose:
+            print('done.')
 
     def save_to_file(self, fname: str, verbose: bool = True):
         """

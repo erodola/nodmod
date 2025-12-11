@@ -49,16 +49,25 @@ class MODSong(Song):
 
         self.patterns = [Pattern(n_rows=MODSong.ROWS, n_channels=MODSong.CHANNELS)]
         self.pattern_seq = [0]
-        self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
-
-    def copy(self) -> MODSong:  # TODO check if this actually works
         
+        # MOD files store samples directly (notes reference samples by index).
+        # We always store the maximum allowed slots, possibly with empty slots.
+        self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
+        self.n_actual_samples = 0  # The number of non-empty samples present in the song.
+
+    def copy(self) -> MODSong:
+        """
+        Creates a deep copy of this song.
+        
+        :return: A new MODSong instance with all data copied.
+        """
         new_song = MODSong()
         new_song.artist = self.artist
         new_song.songname = self.songname
         new_song.patterns = copy.deepcopy(self.patterns)
         new_song.pattern_seq = copy.deepcopy(self.pattern_seq)
         new_song.samples = copy.deepcopy(self.samples)
+        new_song.n_actual_samples = self.n_actual_samples
 
         return new_song
 

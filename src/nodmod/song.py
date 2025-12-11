@@ -19,8 +19,11 @@ __all__ = ['Song']
 class Song(ABC):
     """
     A song is a collection of patterns played in a specific sequence, possibly with repetitions.
-    In addition, songs also store the samples that are used to play the notes.
-    Songs can be loaded from file (e.g., MOD format) or composed from scratch.
+    Songs can be loaded from file (e.g., MOD, XM format) or composed from scratch.
+    
+    Note: Sample/instrument storage is format-specific:
+    - MODSong stores samples directly (notes reference samples)
+    - XMSong stores instruments (notes reference instruments, which contain samples)
     """
 
     PERIOD_SEQ = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-']
@@ -31,11 +34,6 @@ class Song(ABC):
         self.songname = "new song"
         self.patterns = []
         self.pattern_seq = []  # The actual sequence of patterns making up the song.
-
-        # To be consistent with the module standard, we always store as many samples
-        # as the maximum allowed, possibly with empty slots within the sample bank.
-        self.samples = []
-        self.n_actual_samples = 0  # The number of non-empty samples present in the song.
 
     '''
     -------------------------------------
