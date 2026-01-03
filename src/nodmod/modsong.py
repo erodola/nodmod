@@ -7,6 +7,7 @@ import array
 import os
 import pydub  # needed for loading WAV samples
 import copy
+import struct
 
 
 class MODSong(Song):
@@ -16,6 +17,7 @@ class MODSong(Song):
     SAMPLES = 31
     PATTERN_SIZE = ROWS * CHANNELS * 4
     PAL_CLOCK = 7093789.2  # Hz
+    NTSC_SR = 8287  # Hz (reference pitch C-5)
 
     # OpenMPT period table for Tuning 0, Normal
     PERIOD_TABLE = {
@@ -517,11 +519,61 @@ class MODSong(Song):
         self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
 
         return sample_idx, self.samples[sample_idx - 1]
+
+    def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int = 0) -> tuple[int, Sample]:
+        """
+        Loads a sample from a raw list of samples, and stores it at the given sample index.
+        The raw samples should be a list of float values in the range [-1, 1] sampled at 44100 Hz.
+
+        :param raw_samples: The raw samples to load.
+        :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
+                           Use 0 to automatically use the next available slot.
+        :return: A tuple (int, Sample) containing:
+                 - the index of the added sample, from 1 to 31
+                 - the corresponding sample object
+        """
+        if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}.")
+        
+        if sample_idx == 0:
+            for i in range(MODSong.SAMPLES):
+                if len(self.samples[i].waveform) == 0:
+                    sample_idx = i + 1
+                    break
+            if sample_idx == 0:
+                raise ValueError(f"Couldn't find an empty slot for the new sample.")
+
+        self.samples[sample_idx - 1] = Sample()  # reset all attributes
+
+        # convert floats to signed 8-bit PCM bytes
+        pcm_bytes = bytearray()
+        for s in raw_samples:
+            # clip for safety
+            if s > 1.0:
+                s = 1.0
+            elif s < -1.0:
+                s = -1.0
+
+            # scale to signed int8 (-128..127)
+            pcm_bytes.append(struct.pack('b', int(s * 127))[0])
+
+        # create AudioSegment
+        audio = pydub.AudioSegment(
+            data=bytes(pcm_bytes),
+            sample_width=1,   # 8-bit signed PCM
+            frame_rate=44100,
+            channels=1
+        )
+        self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
+
+        return sample_idx, self.samples[sample_idx - 1]
     
     def _get_effective_sample_rate(self, smp: Sample, period: str = "C-5") -> int:
         """
         Returns the effective sample rate of the given sample based on its finetune value
         and the reference period.
+
+        For no finetune, returns 8287 Hz at reference period C-5.
 
         :param smp: The sample object.
         :param period: The period to use as reference pitch (default "C-5").
@@ -597,8 +649,8 @@ class MODSong(Song):
             channels=1
         )
         
-        # export at standard 44100 Hz (pydub will resample automatically)
-        audio = audio.set_frame_rate(44100)
+        # export at standard MOD sample rate, adjusted for finetune
+        audio = audio.set_frame_rate(effective_sample_rate)
         
         audio.export(fname, format="wav")
 
