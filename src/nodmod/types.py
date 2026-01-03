@@ -123,6 +123,16 @@ class Pattern:
     def __len__(self) -> int:
         return self.n_rows
 
+    def __repr__(self):
+        s = ''
+        for row in range(self.n_rows):
+            for channel in range(self.n_channels):
+                s += str(self.data[channel][row]) + ' '
+                if channel < self.n_channels - 1:
+                    s += '| '
+            s += '\n'
+        return s
+
 
 class Sample:
     """
