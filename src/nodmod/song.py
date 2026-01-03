@@ -127,11 +127,18 @@ class Song(ABC):
         try:
             subprocess.run(
                 ["openmpt123", temp_file, "-q", "--channels", "1", "--samplerate", "44100", "--render"],
-                check=True
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
             try:
-                subprocess.run(["ffmpeg", "-ar", "44100", "-i", temp_file, temp_wav], check=True)
+                subprocess.run(
+                    ["ffmpeg", "-ar", "44100", "-i", temp_file, temp_wav], 
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             except FileNotFoundError as e:
                 raise FileNotFoundError(
                     "Neither openmpt123 nor ffmpeg found. Install one of them to render WAV files."
