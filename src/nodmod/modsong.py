@@ -520,14 +520,17 @@ class MODSong(Song):
 
         return sample_idx, self.samples[sample_idx - 1]
 
-    def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int = 0) -> tuple[int, Sample]:
+    def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int = 0, input_sr: int = NTSC_SR) -> tuple[int, Sample]:
         """
         Loads a sample from a raw list of samples, and stores it at the given sample index.
-        The raw samples should be a list of float values in the range [-1, 1] sampled at 44100 Hz.
+        The raw samples should be a list of float values in the range [-1, 1].
+
+        If the sample rate is different from NTSC_SR, the samples will be resampled to NTSC_SR.
 
         :param raw_samples: The raw samples to load.
         :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
                            Use 0 to automatically use the next available slot.
+        :param input_sr: The sample rate of the input raw samples (default NTSC_SR).
         :return: A tuple (int, Sample) containing:
                  - the index of the added sample, from 1 to 31
                  - the corresponding sample object
@@ -535,6 +538,7 @@ class MODSong(Song):
         if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx}.")
         
+        # seek for an empty slot if sample_idx == 0
         if sample_idx == 0:
             for i in range(MODSong.SAMPLES):
                 if len(self.samples[i].waveform) == 0:
@@ -561,9 +565,11 @@ class MODSong(Song):
         audio = pydub.AudioSegment(
             data=bytes(pcm_bytes),
             sample_width=1,   # 8-bit signed PCM
-            frame_rate=44100,
+            frame_rate=input_sr,
             channels=1
         )
+        audio = audio.set_frame_rate(self.NTSC_SR)
+
         self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
 
         return sample_idx, self.samples[sample_idx - 1]
@@ -621,15 +627,17 @@ class MODSong(Song):
 
         return duration
 
-    def save_sample(self, sample_idx: int, fname: str, period: str = "C-5"):
+    def save_sample(self, sample_idx: int, fname: str, period: str = "C-5", force_sample_rate: int = None):
         """
         Saves the sample at the given index as a WAV file.
-        The WAV file will be saved at a sample rate such that when played back at 44100 Hz,
-        it will sound at the correct pitch corresponding to the reference period.
+
+        The WAV file will be saved at the standard MOD sample rate, adjusted for finetune,
+        unless force_sample_rate is specified.
 
         :param sample_idx: The sample index to save, 1 to 31.
         :param fname: The complete file path to the output .wav file.
         :param period: The period to use as reference pitch (default "C-5").
+        :param force_sample_rate: The sample rate to use for the output file (default None).
         :return: None.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
@@ -649,8 +657,9 @@ class MODSong(Song):
             channels=1
         )
         
-        # export at standard MOD sample rate, adjusted for finetune
-        audio = audio.set_frame_rate(effective_sample_rate)
+        # export at the specified sample rate
+        if force_sample_rate is not None and force_sample_rate != effective_sample_rate:
+            audio = audio.set_frame_rate(force_sample_rate)
         
         audio.export(fname, format="wav")
 
