@@ -95,8 +95,9 @@ class Song(ABC):
 
     def render_as_wav(self, fname: str, verbose: bool = True, cleanup: bool = True):
         """
-        Renders the current song as a WAV file.
-        Note: Requires openmpt123 or ffmpeg to be installed and available in PATH.
+        Renders the current song as a WAV file at 44.1kHz.
+        
+        NOTE: Requires openmpt123 or ffmpeg to be installed and available in PATH.
 
         :param fname: Complete path of the output WAV file.
         :param verbose: False for silent rendering.
