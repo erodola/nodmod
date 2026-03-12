@@ -2,14 +2,14 @@
 Data types for tracker music formats (MOD, XM, etc.)
 
 This module contains all the data classes used across different tracker formats:
-- Pattern, Note, XMNote: musical content
+- Pattern, Note, MODNote, XMNote: musical content
 - Sample: audio waveform data
 - Instrument, EnvelopePoint: XM instrument containers and envelopes
 """
 
 import array
 
-__all__ = ['Pattern', 'Sample', 'XMSample', 'EnvelopePoint', 'Instrument', 'Note', 'XMNote']
+__all__ = ['Pattern', 'Sample', 'XMSample', 'EnvelopePoint', 'Instrument', 'Note', 'MODNote', 'XMNote']
 
 
 class Note:
@@ -45,6 +45,10 @@ class Note:
     
     def is_empty(self) -> bool:
         return self.instrument_idx == 0 and self.period == '' and self.effect == ''
+
+
+# MOD-specific alias for clarity (MOD notes are identical to the base Note).
+MODNote = Note
 
 
 class XMNote(Note):

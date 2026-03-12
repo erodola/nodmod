@@ -1141,6 +1141,92 @@ class XMSong(Song):
 
     '''
     -------------------------------------
+    NOTES
+    -------------------------------------
+    '''
+
+    def write_note(
+        self,
+        pattern: int,
+        channel: int,
+        row: int,
+        instrument: int,
+        period: str,
+        effect: str = "",
+        vol_cmd: str | None = None,
+        vol_val: int | None = None,
+    ):
+        """
+        Writes an XM note in the given pattern, channel and row.
+        If no effect is given and the current note already has a speed effect, leaves it unchanged.
+        If vol_cmd and vol_val are omitted, preserves the existing volume column.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param instrument: The instrument index to write.
+        :param period: The note period (pitch) to write, e.g. "C-4".
+        :param effect: The note effect, e.g. "ED1".
+        :param vol_cmd: Volume column command (e.g. 'v', 'd', 'c', etc.), or None to keep existing.
+        :param vol_val: Volume column value, or None to keep existing.
+        :return: None.
+        """
+
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        pat = self.patterns[self.pattern_seq[pattern]]
+
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row}")
+
+        if channel < 0 or channel >= pat.n_channels:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        cur_note = pat.data[channel][row]
+
+        cur_efx = cur_note.effect
+        if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
+            effect = cur_efx
+
+        new_note = XMNote()
+        new_note.instrument_idx = instrument
+        new_note.period = period
+        new_note.effect = effect
+
+        if vol_cmd is None and vol_val is None:
+            new_note.vol_cmd = cur_note.vol_cmd
+            new_note.vol_val = cur_note.vol_val
+        else:
+            new_note.vol_cmd = vol_cmd if vol_cmd is not None else ''
+            new_note.vol_val = vol_val if vol_val is not None else -1
+
+        pat.data[channel][row] = new_note
+
+    def get_note(self, pattern_in_song: int, row: int, channel: int) -> XMNote:
+        """
+        Returns the XMNote object at the given pattern, row and channel.
+
+        :param pattern_in_song: The pattern index (in the sequence) to read from.
+        :param row: The row index to read from, 0-based.
+        :param channel: The channel index to read from, 0-based.
+        :return: The XMNote object.
+        """
+        if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern_in_song}")
+
+        pat = self.patterns[self.pattern_seq[pattern_in_song]]
+
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row}")
+
+        if channel < 0 or channel >= pat.n_channels:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        return pat.data[channel][row]
+
+    '''
+    -------------------------------------
     PATTERNS
     -------------------------------------
     '''
