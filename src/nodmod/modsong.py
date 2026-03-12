@@ -107,7 +107,7 @@ class MODSong(Song):
                     return raw.decode('latin-1')
 
             magic_string = _decode_header_bytes(data[1080:1080 + 4])
-            accepted_magic = {"M.K.", "M!K!"}  # 4-channel variants
+            accepted_magic = {"M.K.", "M!K!", "FLT4"}  # 4-channel variants
             if magic_string not in accepted_magic:  # non-standard mod file
                 raise NotImplementedError(f"Unsupported module format {magic_string}.")
 
