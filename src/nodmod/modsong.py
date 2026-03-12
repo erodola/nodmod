@@ -107,7 +107,8 @@ class MODSong(Song):
                     return raw.decode('latin-1')
 
             magic_string = _decode_header_bytes(data[1080:1080 + 4])
-            if magic_string != "M.K.":  # non-standard mod file
+            accepted_magic = {"M.K.", "M!K!"}  # 4-channel variants
+            if magic_string not in accepted_magic:  # non-standard mod file
                 raise NotImplementedError(f"Unsupported module format {magic_string}.")
 
             # ----------------------------
@@ -275,6 +276,14 @@ class MODSong(Song):
 
         def str_to_bytes_padded(s: str, max_len: int) -> bytes:
             r = bytes(s, 'utf-8')
+            # If UTF-8 would overflow, prefer Latin-1 when it can preserve byte-width.
+            if len(r) > max_len:
+                try:
+                    r_latin1 = bytes(s, 'latin-1')
+                    if len(r_latin1) <= max_len:
+                        r = r_latin1
+                except UnicodeEncodeError:
+                    pass
             if len(r) > max_len:  # truncate
                 r = r[:max_len]
             else:
