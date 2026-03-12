@@ -100,8 +100,15 @@ class MODSong(Song):
 
             # TODO: check if the MOD file is in packed format (never happened so far)
 
-            magic_string = data[1080:1080 + 4].decode('utf-8')
-            if magic_string != "M.K.":  # non-standard mod file
+            def _decode_header_bytes(raw: bytes) -> str:
+                try:
+                    return raw.decode('utf-8')
+                except UnicodeDecodeError:
+                    return raw.decode('latin-1')
+
+            magic_string = _decode_header_bytes(data[1080:1080 + 4])
+            accepted_magic = {"M.K.", "M!K!", "FLT4"}  # 4-channel variants
+            if magic_string not in accepted_magic:  # non-standard mod file
                 raise NotImplementedError(f"Unsupported module format {magic_string}.")
 
             # ----------------------------
@@ -145,7 +152,7 @@ class MODSong(Song):
                     self.n_actual_samples += 1
 
                 smp = Sample()
-                smp.name = data[idx - 22:idx].rstrip(b'\x00').decode('utf-8')
+                smp.name = _decode_header_bytes(data[idx - 22:idx].rstrip(b'\x00'))
 
                 # Lower four bits are the finetune value, stored as a signed 4-bit number.
                 # The upper four bits are not used.
@@ -269,6 +276,14 @@ class MODSong(Song):
 
         def str_to_bytes_padded(s: str, max_len: int) -> bytes:
             r = bytes(s, 'utf-8')
+            # If UTF-8 would overflow, prefer Latin-1 when it can preserve byte-width.
+            if len(r) > max_len:
+                try:
+                    r_latin1 = bytes(s, 'latin-1')
+                    if len(r_latin1) <= max_len:
+                        r = r_latin1
+                except UnicodeEncodeError:
+                    pass
             if len(r) > max_len:  # truncate
                 r = r[:max_len]
             else:
