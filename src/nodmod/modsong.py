@@ -100,7 +100,13 @@ class MODSong(Song):
 
             # TODO: check if the MOD file is in packed format (never happened so far)
 
-            magic_string = data[1080:1080 + 4].decode('utf-8')
+            def _decode_header_bytes(raw: bytes) -> str:
+                try:
+                    return raw.decode('utf-8')
+                except UnicodeDecodeError:
+                    return raw.decode('latin-1')
+
+            magic_string = _decode_header_bytes(data[1080:1080 + 4])
             if magic_string != "M.K.":  # non-standard mod file
                 raise NotImplementedError(f"Unsupported module format {magic_string}.")
 
@@ -145,7 +151,7 @@ class MODSong(Song):
                     self.n_actual_samples += 1
 
                 smp = Sample()
-                smp.name = data[idx - 22:idx].rstrip(b'\x00').decode('utf-8')
+                smp.name = _decode_header_bytes(data[idx - 22:idx].rstrip(b'\x00'))
 
                 # Lower four bits are the finetune value, stored as a signed 4-bit number.
                 # The upper four bits are not used.
