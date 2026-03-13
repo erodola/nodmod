@@ -2,6 +2,7 @@ import array
 import copy
 import shutil
 import warnings
+import pydub  # needed for loading WAV samples
 
 from nodmod import Song
 from nodmod import XMSample
@@ -290,7 +291,9 @@ class XMSong(Song):
                     
                     note_byte = period_to_note_byte(note.period)
                     inst_byte = note.instrument_idx
-                    vol_byte = volume_to_byte(note.vol_cmd, note.vol_val)
+                    vol_cmd = getattr(note, 'vol_cmd', '')
+                    vol_val = getattr(note, 'vol_val', -1)
+                    vol_byte = volume_to_byte(vol_cmd, vol_val)
                     efx_type, efx_param = effect_to_bytes(note.effect)
                     
                     # Determine which fields are present (for packing)
@@ -1138,6 +1141,293 @@ class XMSong(Song):
                  Within each list, each row is a triple (timestamp [s], speed, bpm).
         """
         pass  # TODO
+
+    '''
+    -------------------------------------
+    NOTES
+    -------------------------------------
+    '''
+
+    def write_note(
+        self,
+        pattern: int,
+        channel: int,
+        row: int,
+        instrument: int,
+        period: str,
+        effect: str = "",
+        vol_cmd: str | None = None,
+        vol_val: int | None = None,
+    ):
+        """
+        Writes an XM note in the given pattern, channel and row.
+        If no effect is given and the current note already has a speed effect, leaves it unchanged.
+        If vol_cmd and vol_val are omitted, preserves the existing volume column.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param instrument: The instrument index to write.
+        :param period: The note period (pitch) to write, e.g. "C-4".
+        :param effect: The note effect, e.g. "ED1".
+        :param vol_cmd: Volume column command (e.g. 'v', 'd', 'c', etc.), or None to keep existing.
+        :param vol_val: Volume column value, or None to keep existing.
+        :return: None.
+        """
+
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        pat = self.patterns[self.pattern_seq[pattern]]
+
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row}")
+
+        if channel < 0 or channel >= pat.n_channels:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        cur_note = pat.data[channel][row]
+
+        cur_efx = cur_note.effect
+        if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
+            effect = cur_efx
+
+        new_note = XMNote()
+        new_note.instrument_idx = instrument
+        new_note.period = period
+        new_note.effect = effect
+
+        if vol_cmd is None and vol_val is None:
+            new_note.vol_cmd = getattr(cur_note, 'vol_cmd', '')
+            new_note.vol_val = getattr(cur_note, 'vol_val', -1)
+        else:
+            new_note.vol_cmd = vol_cmd if vol_cmd is not None else ''
+            new_note.vol_val = vol_val if vol_val is not None else -1
+
+        pat.data[channel][row] = new_note
+
+    def get_note(self, pattern_in_song: int, row: int, channel: int) -> XMNote:
+        """
+        Returns the XMNote object at the given pattern, row and channel.
+
+        :param pattern_in_song: The pattern index (in the sequence) to read from.
+        :param row: The row index to read from, 0-based.
+        :param channel: The channel index to read from, 0-based.
+        :return: The XMNote object.
+        """
+        if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern_in_song}")
+
+        pat = self.patterns[self.pattern_seq[pattern_in_song]]
+
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row}")
+
+        if channel < 0 or channel >= pat.n_channels:
+            raise IndexError(f"Invalid channel index {channel}")
+
+        return pat.data[channel][row]
+
+    '''
+    -------------------------------------
+    INSTRUMENTS AND SAMPLES
+    -------------------------------------
+    '''
+
+    def new_instrument(self, name: str = "") -> int:
+        """
+        Creates a new empty instrument and returns its 1-based index.
+        """
+        inst = Instrument()
+        inst.name = name
+        self.instruments.append(inst)
+        self.n_instruments = len(self.instruments)
+        return self.n_instruments
+
+    def list_instruments(self) -> list[Instrument]:
+        """Return the list of instruments in order."""
+        return self.instruments
+
+    def get_instrument(self, inst_idx: int) -> Instrument:
+        """Return the instrument at the given 1-based index."""
+        if inst_idx <= 0 or inst_idx > len(self.instruments):
+            raise IndexError(f"Invalid instrument index {inst_idx}")
+        return self.instruments[inst_idx - 1]
+
+    def remove_instrument(self, inst_idx: int) -> None:
+        """
+        Clears the instrument at the given 1-based index without changing indices.
+        """
+        if inst_idx <= 0 or inst_idx > len(self.instruments):
+            raise IndexError(f"Invalid instrument index {inst_idx}")
+        self.instruments[inst_idx - 1] = Instrument()
+
+    def add_sample(self, inst_idx: int, sample: XMSample) -> int:
+        """
+        Adds a sample to an instrument and returns its 1-based sample index.
+        """
+        inst = self.get_instrument(inst_idx)
+        inst.samples.append(sample)
+        if not inst.sample_map:
+            inst.sample_map = [0] * 96
+        return len(inst.samples)
+
+    def get_sample(self, inst_idx: int, sample_idx: int) -> XMSample:
+        """Return the sample at the given 1-based index within the instrument."""
+        inst = self.get_instrument(inst_idx)
+        if sample_idx <= 0 or sample_idx > len(inst.samples):
+            raise IndexError(f"Invalid sample index {sample_idx}")
+        return inst.samples[sample_idx - 1]
+
+    def remove_sample(self, inst_idx: int, sample_idx: int) -> None:
+        """Remove a sample and update the sample map accordingly."""
+        inst = self.get_instrument(inst_idx)
+        if sample_idx <= 0 or sample_idx > len(inst.samples):
+            raise IndexError(f"Invalid sample index {sample_idx}")
+        removed_idx = sample_idx - 1
+        inst.samples.pop(removed_idx)
+        if inst.sample_map:
+            new_map: list[int] = []
+            for v in inst.sample_map:
+                if v == removed_idx:
+                    new_map.append(0)
+                elif v > removed_idx:
+                    new_map.append(v - 1)
+                else:
+                    new_map.append(v)
+            inst.sample_map = new_map
+
+    def set_instrument_sample(self, inst_idx: int, sample: XMSample) -> None:
+        """
+        Replaces the instrument's samples with a single sample.
+        """
+        inst = self.get_instrument(inst_idx)
+        inst.samples = [sample]
+        inst.sample_map = [0] * 96
+
+    def get_instrument_sample(self, inst_idx: int) -> XMSample | None:
+        """
+        Returns the single sample if the instrument has exactly one sample, otherwise None.
+        """
+        inst = self.get_instrument(inst_idx)
+        if len(inst.samples) != 1:
+            return None
+        return inst.samples[0]
+
+    def load_sample(self, inst_idx: int, fname: str) -> int:
+        """
+        Loads a WAV sample and stores it in the given instrument.
+        Returns the 1-based sample index.
+        """
+        inst = self.get_instrument(inst_idx)
+        audio = pydub.AudioSegment.from_wav(fname).set_channels(1)
+        sample = XMSample()
+        sample.waveform = audio.get_array_of_samples()
+        sample.is_16bit = audio.sample_width == 2
+        inst.samples.append(sample)
+        if not inst.sample_map:
+            inst.sample_map = [0] * 96
+        return len(inst.samples)
+
+    def copy_instrument_from(self, src: 'XMSong', inst_idx: int) -> int:
+        """
+        Copies a single instrument from another XMSong and returns the new index.
+        """
+        inst = src.get_instrument(inst_idx)
+        new_idx = self.new_instrument(inst.name)
+        new_inst = self.get_instrument(new_idx)
+
+        # Preserve internal header metadata
+        new_inst._type = inst._type
+        new_inst._header_size = inst._header_size
+
+        # Envelopes (preserve raw flags for fidelity)
+        new_inst.set_volume_envelope(
+            [(p.frame, p.value) for p in inst.volume_envelope],
+            sustain=inst.volume_sustain_point,
+            loop=(inst.volume_loop_start, inst.volume_loop_end),
+            enabled=(inst.volume_type & 0x01) != 0,
+            sustain_enabled=(inst.volume_type & 0x02) != 0,
+            loop_enabled=(inst.volume_type & 0x04) != 0,
+            raw_type=inst.volume_type,
+        )
+        new_inst.set_panning_envelope(
+            [(p.frame, p.value) for p in inst.panning_envelope],
+            sustain=inst.panning_sustain_point,
+            loop=(inst.panning_loop_start, inst.panning_loop_end),
+            enabled=(inst.panning_type & 0x01) != 0,
+            sustain_enabled=(inst.panning_type & 0x02) != 0,
+            loop_enabled=(inst.panning_type & 0x04) != 0,
+            raw_type=inst.panning_type,
+        )
+
+        new_inst.vibrato_type = inst.vibrato_type
+        new_inst.vibrato_sweep = inst.vibrato_sweep
+        new_inst.vibrato_depth = inst.vibrato_depth
+        new_inst.vibrato_rate = inst.vibrato_rate
+        new_inst.volume_fadeout = inst.volume_fadeout
+
+        # Samples
+        for smp in inst.samples:
+            new_smp = XMSample()
+            new_smp.name = smp.name
+            new_smp.volume = smp.volume
+            new_smp.finetune = smp.finetune
+            new_smp.panning = smp.panning
+            new_smp.relative_note = smp.relative_note
+            new_smp._reserved = smp._reserved
+            new_smp.loop_type = smp.loop_type
+            new_smp.is_16bit = smp.is_16bit
+            new_smp.repeat_point = smp.repeat_point
+            new_smp.repeat_len = smp.repeat_len
+            new_smp.waveform = smp.waveform.__class__(smp.waveform.typecode, smp.waveform)
+            self.add_sample(new_idx, new_smp)
+
+        # Sample map (1-based for API)
+        if inst.samples:
+            map_1based = [v + 1 for v in inst.sample_map[:96]]
+            new_inst.set_sample_map(map_1based)
+
+        return new_idx
+
+    def copy_instruments_from(self, src: 'XMSong', inst_indices: list[int]) -> dict[int, int]:
+        """
+        Copies multiple instruments from another XMSong.
+        Returns a mapping from source index to new destination index.
+        """
+        mapping: dict[int, int] = {}
+        for idx in inst_indices:
+            mapping[idx] = self.copy_instrument_from(src, idx)
+        return mapping
+
+    def save_sample(
+        self,
+        inst_idx: int,
+        sample_idx: int,
+        fname: str,
+        sample_rate: int | None = None,
+        force_sample_rate: int | None = None,
+    ):
+        """
+        Saves the sample at the given index as a WAV file.
+        """
+        smp = self.get_sample(inst_idx, sample_idx)
+        if sample_rate is None:
+            sample_rate = 8363
+
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+
+        sample_width = 2 if smp.is_16bit else 1
+        audio = pydub.AudioSegment(
+            data=smp.waveform.tobytes(),
+            sample_width=sample_width,
+            frame_rate=sample_rate,
+            channels=1,
+        )
+        if force_sample_rate is not None and force_sample_rate != sample_rate:
+            audio = audio.set_frame_rate(force_sample_rate)
+        audio.export(fname, format="wav")
 
     '''
     -------------------------------------
