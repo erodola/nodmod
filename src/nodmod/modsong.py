@@ -425,6 +425,8 @@ class MODSong(Song):
         jump_to_position = -1  # modified by Dxx effect
         jump_to_pattern = -1  # modified by Bxx effect (song order index)
         stop_song = False
+        self_jump_count = 0
+        self_jump_limit = 5
 
         start_row = 0
 
@@ -438,8 +440,8 @@ class MODSong(Song):
             pattern_speeds = []
             pattern_bpms = []
 
-            loop_start_row = 0
-            loop_count = 0
+            loop_start_row = [0] * MODSong.CHANNELS
+            loop_count = [0] * MODSong.CHANNELS
 
             r = start_row
             while r < MODSong.ROWS:
@@ -451,6 +453,9 @@ class MODSong(Song):
 
                 row_delay = 0
                 loop_jump_row = None
+                pending_jump_row = None
+                pending_jump_pattern = None
+                saw_self_jump = False
 
                 for c in range(MODSong.CHANNELS):    
 
@@ -470,36 +475,39 @@ class MODSong(Song):
                             # print(f"CHANGE: Pattern {p}, row {r}, channel {c}, speed {speed}, bpm {bpm}, tick duration {d}")
 
                         elif efx[0] == "D":  # jump to a specific row in the next pattern
-                            jump_to_position = int(efx[1:], 10)  # NOTE: decimal, not hex
-                            break
+                            if len(efx) >= 3:
+                                hi = int(efx[1], 16)
+                                lo = int(efx[2], 16)
+                                if len(self.pattern_seq) > 1:
+                                    pending_jump_row = hi * 10 + lo
 
                         elif efx[0] == "B":  # break to a specific pattern
                             dest = int(efx[1:], 16)
                             if dest < len(self.pattern_seq):
                                 if dest > seq_idx:
-                                    jump_to_pattern = dest
+                                    pending_jump_pattern = dest
+                                elif dest == seq_idx:
+                                    saw_self_jump = True
                                 else:
                                     stop_song = True
-                            break
                         
                         elif efx[0] == "E" and len(efx) >= 3:
                             cmd = efx[1].upper()
                             val = int(efx[2], 16)
-                            if cmd == "6":  # pattern loop
+                            if cmd == "6":  # pattern loop (per-channel)
                                 if val == 0:
-                                    old_loop_start = loop_start_row
-                                    loop_start_row = r
-                                    if loop_count == -1 and r > old_loop_start:
-                                        loop_count = 0
+                                    old_loop_start = loop_start_row[c]
+                                    loop_start_row[c] = r
+                                    if loop_count[c] == -1 and r > old_loop_start:
+                                        loop_count[c] = 0
                                 else:
-                                    if loop_count == 0:
-                                        loop_count = val
-                                    if loop_count > 0 and loop_start_row < r:
-                                        loop_count -= 1
-                                        loop_jump_row = loop_start_row
-                                        if loop_count == 0:
-                                            loop_count = -1
-                                        break
+                                    if loop_count[c] == 0:
+                                        loop_count[c] = val
+                                    if loop_count[c] > 0 and loop_start_row[c] < r:
+                                        loop_count[c] -= 1
+                                        loop_jump_row = loop_start_row[c]
+                                        if loop_count[c] == 0:
+                                            loop_count[c] = -1
                             elif cmd == "E":  # pattern delay
                                 row_delay = val
 
@@ -513,17 +521,28 @@ class MODSong(Song):
                 if stop_song:
                     break
 
-                if jump_to_position != -1:
-                    start_row = jump_to_position
-                    break
+                # Allow limited self-jumps only when combined with Dxx in the same row.
+                if saw_self_jump and pending_jump_row is not None and self_jump_count < self_jump_limit:
+                    pending_jump_pattern = seq_idx
+                    self_jump_count += 1
 
-                if jump_to_pattern != -1:
-                    start_row = 0
-                    break
-                
+                # If a pattern loop is triggered, it takes precedence over jumps.
                 if loop_jump_row is not None:
                     r = loop_jump_row
                     continue
+
+                if pending_jump_pattern is not None:
+                    jump_to_pattern = pending_jump_pattern
+                    if pending_jump_row is not None:
+                        start_row = pending_jump_row
+                    else:
+                        start_row = 0
+                    break
+
+                if pending_jump_row is not None:
+                    jump_to_position = pending_jump_row
+                    start_row = jump_to_position
+                    break
 
                 r += 1
 
