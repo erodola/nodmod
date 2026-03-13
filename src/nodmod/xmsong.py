@@ -1329,6 +1329,77 @@ class XMSong(Song):
             inst.sample_map = [0] * 96
         return len(inst.samples)
 
+    def copy_instrument_from(self, src: 'XMSong', inst_idx: int) -> int:
+        """
+        Copies a single instrument from another XMSong and returns the new index.
+        """
+        inst = src.get_instrument(inst_idx)
+        new_idx = self.new_instrument(inst.name)
+        new_inst = self.get_instrument(new_idx)
+
+        # Preserve internal header metadata
+        new_inst._type = inst._type
+        new_inst._header_size = inst._header_size
+
+        # Envelopes (preserve raw flags for fidelity)
+        new_inst.set_volume_envelope(
+            [(p.frame, p.value) for p in inst.volume_envelope],
+            sustain=inst.volume_sustain_point,
+            loop=(inst.volume_loop_start, inst.volume_loop_end),
+            enabled=(inst.volume_type & 0x01) != 0,
+            sustain_enabled=(inst.volume_type & 0x02) != 0,
+            loop_enabled=(inst.volume_type & 0x04) != 0,
+            raw_type=inst.volume_type,
+        )
+        new_inst.set_panning_envelope(
+            [(p.frame, p.value) for p in inst.panning_envelope],
+            sustain=inst.panning_sustain_point,
+            loop=(inst.panning_loop_start, inst.panning_loop_end),
+            enabled=(inst.panning_type & 0x01) != 0,
+            sustain_enabled=(inst.panning_type & 0x02) != 0,
+            loop_enabled=(inst.panning_type & 0x04) != 0,
+            raw_type=inst.panning_type,
+        )
+
+        new_inst.vibrato_type = inst.vibrato_type
+        new_inst.vibrato_sweep = inst.vibrato_sweep
+        new_inst.vibrato_depth = inst.vibrato_depth
+        new_inst.vibrato_rate = inst.vibrato_rate
+        new_inst.volume_fadeout = inst.volume_fadeout
+
+        # Samples
+        for smp in inst.samples:
+            new_smp = XMSample()
+            new_smp.name = smp.name
+            new_smp.volume = smp.volume
+            new_smp.finetune = smp.finetune
+            new_smp.panning = smp.panning
+            new_smp.relative_note = smp.relative_note
+            new_smp._reserved = smp._reserved
+            new_smp.loop_type = smp.loop_type
+            new_smp.is_16bit = smp.is_16bit
+            new_smp.repeat_point = smp.repeat_point
+            new_smp.repeat_len = smp.repeat_len
+            new_smp.waveform = smp.waveform.__class__(smp.waveform.typecode, smp.waveform)
+            self.add_sample(new_idx, new_smp)
+
+        # Sample map (1-based for API)
+        if inst.samples:
+            map_1based = [v + 1 for v in inst.sample_map[:96]]
+            new_inst.set_sample_map(map_1based)
+
+        return new_idx
+
+    def copy_instruments_from(self, src: 'XMSong', inst_indices: list[int]) -> dict[int, int]:
+        """
+        Copies multiple instruments from another XMSong.
+        Returns a mapping from source index to new destination index.
+        """
+        mapping: dict[int, int] = {}
+        for idx in inst_indices:
+            mapping[idx] = self.copy_instrument_from(src, idx)
+        return mapping
+
     def save_sample(
         self,
         inst_idx: int,
