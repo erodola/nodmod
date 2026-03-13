@@ -407,7 +407,6 @@ class MODSong(Song):
         Computes the timestamp of each row in the song.
         Takes into account speed / bpm changes, pattern breaks, and position jumps.
 
-        FIXME: implement pattern delays (EEx) and loops (E6x).
 
         :return: A list where each element is a list corresponding to pattern in the sequence.
                  Within each list, each row is a triple (timestamp [s], speed, bpm).
@@ -424,28 +423,34 @@ class MODSong(Song):
         bpms = []
 
         jump_to_position = -1  # modified by Dxx effect
-        jump_to_pattern = -1  # modified by Bxx effect
+        jump_to_pattern = -1  # modified by Bxx effect (song order index)
+        stop_song = False
 
         start_row = 0
 
-        for p in self.pattern_seq:
+        seq_idx = 0
+        while seq_idx < len(self.pattern_seq):
 
-            # skip patterns until the one specified by Bxx effect is reached
-            if jump_to_pattern != -1:
-                jump_to_pattern -= 1
-                continue
+            p = self.pattern_seq[seq_idx]
 
             # we annotate each pattern separately
             pattern_timestamps = []
             pattern_speeds = []
             pattern_bpms = []
 
-            for r in range(start_row, MODSong.ROWS):
+            loop_start_row = 0
+            loop_count = 0
+
+            r = start_row
+            while r < MODSong.ROWS:
 
                 # reset the jump flags
                 if jump_to_position != -1:
                     jump_to_position = -1
                     start_row = 0
+
+                row_delay = 0
+                loop_jump_row = None
 
                 for c in range(MODSong.CHANNELS):    
 
@@ -456,7 +461,8 @@ class MODSong(Song):
 
                             v = int(efx[1:], 16)
                             if v <= 31:
-                                speed = v
+                                if v != 0:
+                                    speed = v
                             else:
                                 bpm = v
 
@@ -468,25 +474,73 @@ class MODSong(Song):
                             break
 
                         elif efx[0] == "B":  # break to a specific pattern
-                            jump_to_pattern = int(efx[1:], 16)
+                            dest = int(efx[1:], 16)
+                            if dest < len(self.pattern_seq):
+                                if dest > seq_idx:
+                                    jump_to_pattern = dest
+                                else:
+                                    stop_song = True
                             break
+                        
+                        elif efx[0] == "E" and len(efx) >= 3:
+                            cmd = efx[1].upper()
+                            val = int(efx[2], 16)
+                            if cmd == "6":  # pattern loop
+                                if val == 0:
+                                    old_loop_start = loop_start_row
+                                    loop_start_row = r
+                                    if loop_count == -1 and r > old_loop_start:
+                                        loop_count = 0
+                                else:
+                                    if loop_count == 0:
+                                        loop_count = val
+                                    if loop_count > 0 and loop_start_row < r:
+                                        loop_count -= 1
+                                        loop_jump_row = loop_start_row
+                                        if loop_count == 0:
+                                            loop_count = -1
+                                        break
+                            elif cmd == "E":  # pattern delay
+                                row_delay = val
 
-                pattern_timestamps.append(d * speed)
+                row_duration = d * speed
+                if row_delay > 0:
+                    row_duration *= (row_delay + 1)
+                pattern_timestamps.append(row_duration)
                 pattern_speeds.append(speed)
                 pattern_bpms.append(bpm)
+
+                if stop_song:
+                    break
 
                 if jump_to_position != -1:
                     start_row = jump_to_position
                     break
 
                 if jump_to_pattern != -1:
-                    jump_to_pattern -= p + 2
                     start_row = 0
                     break
+                
+                if loop_jump_row is not None:
+                    r = loop_jump_row
+                    continue
+
+                r += 1
 
             timestamps.append(pattern_timestamps)
             speeds.append(pattern_speeds)
             bpms.append(pattern_bpms)
+
+            if stop_song:
+                break
+
+            if jump_to_pattern != -1:
+                seq_idx = jump_to_pattern
+                jump_to_pattern = -1
+                start_row = 0
+                continue
+
+            seq_idx += 1
 
         # cumsum over the entire list of lists
         cum = 0
@@ -751,19 +805,6 @@ class MODSong(Song):
         self.pattern_seq.append(n)
 
         return n
-
-    def get_pattern_duration(self, pattern: int) -> float:
-        """
-        Returns the duration of a pattern in seconds.
-
-        :param pattern: The pattern index (within the song sequence).
-        :return: The pattern duration in seconds.
-        """
-
-        # TODO
-        raise NotImplementedError("Not implemented yet.")
-        
-        return 0.
         
     def get_effective_row_count(self, pattern: int, include_loops: bool = True) -> int:
         """
