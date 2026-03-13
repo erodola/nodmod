@@ -266,3 +266,124 @@ class Instrument:
     def is_empty(self) -> bool:
         """Return True if this instrument has no samples (stub instrument)."""
         return len(self.samples) == 0
+
+    def set_sample_map(self, map96: list[int]):
+        """
+        Sets the 96-entry sample map using 1-based sample indices.
+        Each value must be in [1, n_samples].
+        """
+        if len(map96) != 96:
+            raise ValueError(f"Sample map must have 96 entries, got {len(map96)}")
+        n_samples = len(self.samples)
+        if n_samples == 0:
+            # No samples: keep an empty map
+            self.sample_map = []
+            return
+        for v in map96:
+            if v < 1 or v > n_samples:
+                raise ValueError(f"Invalid sample index {v} for instrument with {n_samples} samples")
+        # Store as 0-based indices internally
+        self.sample_map = [v - 1 for v in map96]
+
+    def get_sample_map(self) -> list[int]:
+        """
+        Returns the 96-entry sample map using 1-based sample indices.
+        """
+        if not self.sample_map:
+            return []
+        return [v + 1 for v in self.sample_map]
+
+    def set_sample_for_note(self, note: int, sample_idx: int):
+        """
+        Sets the sample for a given note (0-95) using 1-based sample indices.
+        """
+        if note < 0 or note >= 96:
+            raise IndexError(f"Invalid note index {note}")
+        n_samples = len(self.samples)
+        if n_samples == 0:
+            raise ValueError("Instrument has no samples")
+        if sample_idx < 1 or sample_idx > n_samples:
+            raise ValueError(f"Invalid sample index {sample_idx} for instrument with {n_samples} samples")
+        if not self.sample_map or len(self.sample_map) != 96:
+            self.sample_map = [0] * 96
+        self.sample_map[note] = sample_idx - 1
+
+    def _normalize_envelope_points(self, points: list[EnvelopePoint | tuple[int, int]]) -> list[EnvelopePoint]:
+        norm: list[EnvelopePoint] = []
+        for p in points:
+            if isinstance(p, EnvelopePoint):
+                norm.append(EnvelopePoint(p.frame, p.value))
+            else:
+                frame, value = p
+                norm.append(EnvelopePoint(frame, value))
+        return norm
+
+    def set_volume_envelope(
+        self,
+        points: list[EnvelopePoint | tuple[int, int]],
+        sustain: int | None = None,
+        loop: tuple[int, int] | None = None,
+        enabled: bool = True,
+        sustain_enabled: bool | None = None,
+        loop_enabled: bool | None = None,
+        raw_type: int | None = None,
+    ):
+        """Set the volume envelope points and flags."""
+        self.volume_envelope = self._normalize_envelope_points(points)
+        self.volume_sustain_point = sustain if sustain is not None else 0
+        if loop is not None:
+            self.volume_loop_start, self.volume_loop_end = loop
+        else:
+            self.volume_loop_start = 0
+            self.volume_loop_end = 0
+
+        if sustain_enabled is None:
+            sustain_enabled = sustain is not None
+        if loop_enabled is None:
+            loop_enabled = loop is not None
+
+        if raw_type is not None:
+            self.volume_type = raw_type
+        else:
+            self.volume_type = 0
+            if enabled and self.volume_envelope:
+                self.volume_type |= 0x01
+            if sustain_enabled:
+                self.volume_type |= 0x02
+            if loop_enabled:
+                self.volume_type |= 0x04
+
+    def set_panning_envelope(
+        self,
+        points: list[EnvelopePoint | tuple[int, int]],
+        sustain: int | None = None,
+        loop: tuple[int, int] | None = None,
+        enabled: bool = True,
+        sustain_enabled: bool | None = None,
+        loop_enabled: bool | None = None,
+        raw_type: int | None = None,
+    ):
+        """Set the panning envelope points and flags."""
+        self.panning_envelope = self._normalize_envelope_points(points)
+        self.panning_sustain_point = sustain if sustain is not None else 0
+        if loop is not None:
+            self.panning_loop_start, self.panning_loop_end = loop
+        else:
+            self.panning_loop_start = 0
+            self.panning_loop_end = 0
+
+        if sustain_enabled is None:
+            sustain_enabled = sustain is not None
+        if loop_enabled is None:
+            loop_enabled = loop is not None
+
+        if raw_type is not None:
+            self.panning_type = raw_type
+        else:
+            self.panning_type = 0
+            if enabled and self.panning_envelope:
+                self.panning_type |= 0x01
+            if sustain_enabled:
+                self.panning_type |= 0x02
+            if loop_enabled:
+                self.panning_type |= 0x04

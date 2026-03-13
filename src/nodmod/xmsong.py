@@ -2,6 +2,7 @@ import array
 import copy
 import shutil
 import warnings
+import pydub  # needed for loading WAV samples
 
 from nodmod import Song
 from nodmod import XMSample
@@ -290,7 +291,9 @@ class XMSong(Song):
                     
                     note_byte = period_to_note_byte(note.period)
                     inst_byte = note.instrument_idx
-                    vol_byte = volume_to_byte(note.vol_cmd, note.vol_val)
+                    vol_cmd = getattr(note, 'vol_cmd', '')
+                    vol_val = getattr(note, 'vol_val', -1)
+                    vol_byte = volume_to_byte(vol_cmd, vol_val)
                     efx_type, efx_param = effect_to_bytes(note.effect)
                     
                     # Determine which fields are present (for packing)
@@ -1195,8 +1198,8 @@ class XMSong(Song):
         new_note.effect = effect
 
         if vol_cmd is None and vol_val is None:
-            new_note.vol_cmd = cur_note.vol_cmd
-            new_note.vol_val = cur_note.vol_val
+            new_note.vol_cmd = getattr(cur_note, 'vol_cmd', '')
+            new_note.vol_val = getattr(cur_note, 'vol_val', -1)
         else:
             new_note.vol_cmd = vol_cmd if vol_cmd is not None else ''
             new_note.vol_val = vol_val if vol_val is not None else -1
@@ -1224,6 +1227,136 @@ class XMSong(Song):
             raise IndexError(f"Invalid channel index {channel}")
 
         return pat.data[channel][row]
+
+    '''
+    -------------------------------------
+    INSTRUMENTS AND SAMPLES
+    -------------------------------------
+    '''
+
+    def new_instrument(self, name: str = "") -> int:
+        """
+        Creates a new empty instrument and returns its 1-based index.
+        """
+        inst = Instrument()
+        inst.name = name
+        self.instruments.append(inst)
+        self.n_instruments = len(self.instruments)
+        return self.n_instruments
+
+    def list_instruments(self) -> list[Instrument]:
+        """Return the list of instruments in order."""
+        return self.instruments
+
+    def get_instrument(self, inst_idx: int) -> Instrument:
+        """Return the instrument at the given 1-based index."""
+        if inst_idx <= 0 or inst_idx > len(self.instruments):
+            raise IndexError(f"Invalid instrument index {inst_idx}")
+        return self.instruments[inst_idx - 1]
+
+    def remove_instrument(self, inst_idx: int) -> None:
+        """
+        Clears the instrument at the given 1-based index without changing indices.
+        """
+        if inst_idx <= 0 or inst_idx > len(self.instruments):
+            raise IndexError(f"Invalid instrument index {inst_idx}")
+        self.instruments[inst_idx - 1] = Instrument()
+
+    def add_sample(self, inst_idx: int, sample: XMSample) -> int:
+        """
+        Adds a sample to an instrument and returns its 1-based sample index.
+        """
+        inst = self.get_instrument(inst_idx)
+        inst.samples.append(sample)
+        if not inst.sample_map:
+            inst.sample_map = [0] * 96
+        return len(inst.samples)
+
+    def get_sample(self, inst_idx: int, sample_idx: int) -> XMSample:
+        """Return the sample at the given 1-based index within the instrument."""
+        inst = self.get_instrument(inst_idx)
+        if sample_idx <= 0 or sample_idx > len(inst.samples):
+            raise IndexError(f"Invalid sample index {sample_idx}")
+        return inst.samples[sample_idx - 1]
+
+    def remove_sample(self, inst_idx: int, sample_idx: int) -> None:
+        """Remove a sample and update the sample map accordingly."""
+        inst = self.get_instrument(inst_idx)
+        if sample_idx <= 0 or sample_idx > len(inst.samples):
+            raise IndexError(f"Invalid sample index {sample_idx}")
+        removed_idx = sample_idx - 1
+        inst.samples.pop(removed_idx)
+        if inst.sample_map:
+            new_map: list[int] = []
+            for v in inst.sample_map:
+                if v == removed_idx:
+                    new_map.append(0)
+                elif v > removed_idx:
+                    new_map.append(v - 1)
+                else:
+                    new_map.append(v)
+            inst.sample_map = new_map
+
+    def set_instrument_sample(self, inst_idx: int, sample: XMSample) -> None:
+        """
+        Replaces the instrument's samples with a single sample.
+        """
+        inst = self.get_instrument(inst_idx)
+        inst.samples = [sample]
+        inst.sample_map = [0] * 96
+
+    def get_instrument_sample(self, inst_idx: int) -> XMSample | None:
+        """
+        Returns the single sample if the instrument has exactly one sample, otherwise None.
+        """
+        inst = self.get_instrument(inst_idx)
+        if len(inst.samples) != 1:
+            return None
+        return inst.samples[0]
+
+    def load_sample(self, inst_idx: int, fname: str) -> int:
+        """
+        Loads a WAV sample and stores it in the given instrument.
+        Returns the 1-based sample index.
+        """
+        inst = self.get_instrument(inst_idx)
+        audio = pydub.AudioSegment.from_wav(fname).set_channels(1)
+        sample = XMSample()
+        sample.waveform = audio.get_array_of_samples()
+        sample.is_16bit = audio.sample_width == 2
+        inst.samples.append(sample)
+        if not inst.sample_map:
+            inst.sample_map = [0] * 96
+        return len(inst.samples)
+
+    def save_sample(
+        self,
+        inst_idx: int,
+        sample_idx: int,
+        fname: str,
+        sample_rate: int | None = None,
+        force_sample_rate: int | None = None,
+    ):
+        """
+        Saves the sample at the given index as a WAV file.
+        """
+        smp = self.get_sample(inst_idx, sample_idx)
+        if sample_rate is None:
+            sample_rate = 8363
+
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+
+        sample_width = 2 if smp.is_16bit else 1
+        audio = pydub.AudioSegment(
+            data=smp.waveform.tobytes(),
+            sample_width=sample_width,
+            frame_rate=sample_rate,
+            channels=1,
+        )
+        if force_sample_rate is not None and force_sample_rate != sample_rate:
+            audio = audio.set_frame_rate(force_sample_rate)
+        audio.export(fname, format="wav")
 
     '''
     -------------------------------------
