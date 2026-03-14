@@ -200,7 +200,7 @@ class Song(ABC):
         """
 
         if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         self.pattern_seq = self.pattern_seq[:pattern + 1]
 
@@ -216,7 +216,7 @@ class Song(ABC):
         :param pattern: The pattern index (within the song sequence) to be removed.
         """
         if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         self.pattern_seq = self.pattern_seq[:pattern] + self.pattern_seq[pattern + 1:]
 
@@ -238,7 +238,7 @@ class Song(ABC):
         :param pattern: The pattern index (within the song sequence) to be kept.
         """
         if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         self.pattern_seq = [self.pattern_seq[pattern]]
 
@@ -250,7 +250,7 @@ class Song(ABC):
         :return: The index of the new pattern.
         """
         if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[pattern]]))
         n = len(self.patterns) - 1

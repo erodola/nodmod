@@ -2,6 +2,7 @@ import array
 import copy
 import shutil
 import warnings
+import struct
 import pydub  # needed for loading WAV samples
 
 from nodmod import Song
@@ -30,6 +31,23 @@ class XMSong(Song):
         """True if using linear frequency table, False for Amiga frequency table."""
         return (self.flags & 0x01) == 1
     
+    def _note_str_to_idx(self, note: str | int) -> int:
+        if isinstance(note, int):
+            return note
+        s = note.strip().upper()
+        if len(s) != 3 or s[1] not in ('-', '#'):
+            raise ValueError(f"Invalid note format {note}. Expected like C-4 or F#3.")
+        pitch = s[:2]
+        try:
+            octave = int(s[2])
+        except ValueError as exc:
+            raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
+        if pitch not in Song.PERIOD_SEQ:
+            raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
+        note_idx = Song.PERIOD_SEQ.index(pitch)
+        idx = (octave - 1) * 12 + note_idx
+        return idx
+
     def __init__(self):
         super().__init__()
         
@@ -536,18 +554,18 @@ class XMSong(Song):
             magic_string = header[:17].decode('ascii')
 
             if magic_string != "Extended Module: ":  # non-standard xm file
-                raise NotImplementedError(f"Not an XM module! Magic string: {magic_string}.")
+                raise NotImplementedError(f"Not an XM module. Magic string: {magic_string}.")
             
             self.songname = header[17:37].decode('latin-1').rstrip(' \x00')
 
             if header[37] != 0x1A:
-                raise NotImplementedError("Invalid XM file format.")
+                raise NotImplementedError("Invalid XM file format (header mismatch).")
             
             self.tracker_name = header[38:58].decode('latin-1').rstrip(' \x00')
             
             version = int.from_bytes(header[58:60], byteorder='big', signed=False)
             if version < 0x0104:
-                raise NotImplementedError(f"Unsupported XM version {version}.")
+                raise NotImplementedError(f"Unsupported XM version {version} (expected 0x0104).")
             
             # ----------------------------
             # Load variable-size header data
@@ -562,12 +580,12 @@ class XMSong(Song):
             # number of channels
             self.n_channels = int.from_bytes(data[68:70], byteorder='little', signed=False)
             if self.n_channels > 32:
-                raise NotImplementedError(f"Too many channels: {self.n_channels}.")
+                raise NotImplementedError(f"Too many channels: {self.n_channels} (XM supports 1-32).")
 
             # number of instruments (note : some instruments may be empty)
             self.n_instruments = int.from_bytes(data[72:74], byteorder='little', signed=False)
             if self.n_instruments > 128:
-                raise NotImplementedError(f"Too many instruments: {self.n_instruments}.")
+                raise NotImplementedError(f"Too many instruments: {self.n_instruments} (XM supports 1-128).")
             self.instruments = [Instrument() for _ in range(self.n_instruments)]
 
             # 0 = Amiga frequency table; 1 = Linear frequency table
@@ -592,7 +610,7 @@ class XMSong(Song):
 
             n_unique_patterns = int.from_bytes(data[70:72], byteorder='little', signed=False)
             if n_unique_patterns > 256:
-                raise NotImplementedError(f"Too many patterns: {n_unique_patterns}.")
+                raise NotImplementedError(f"Too many patterns: {n_unique_patterns} (XM supports 1-256).")
             
             # ----------------------------
             # Load pattern data
@@ -775,10 +793,10 @@ class XMSong(Song):
             for p in range(n_unique_patterns):
 
                 if pattern_data[cur_pat_idx:cur_pat_idx + 4][0] != 9:
-                    raise NotImplementedError(f"Unsupported pattern header length: {pattern_data[cur_pat_idx:cur_pat_idx + 4][0]}.")
+                    raise NotImplementedError(f"Unsupported pattern header length {pattern_data[cur_pat_idx:cur_pat_idx + 4][0]} (expected 9).")
 
                 if pattern_data[cur_pat_idx+4] != 0:
-                    raise NotImplementedError(f"Unsupported packing type.")
+                    raise NotImplementedError("Unsupported packing type (expected 0).")
 
                 n_rows = int.from_bytes(pattern_data[cur_pat_idx+5:cur_pat_idx+7], byteorder='little', signed=False)
 
@@ -1358,15 +1376,15 @@ class XMSong(Song):
         """
 
         if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         pat = self.patterns[self.pattern_seq[pattern]]
 
         if row < 0 or row >= pat.n_rows:
-            raise IndexError(f"Invalid row index {row}")
+            raise IndexError(f"Invalid row index {row} (expected 0-{self.patterns[pattern].n_rows-1}).")
 
         if channel < 0 or channel >= pat.n_channels:
-            raise IndexError(f"Invalid channel index {channel}")
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
 
         cur_note = pat.data[channel][row]
 
@@ -1403,10 +1421,10 @@ class XMSong(Song):
         pat = self.patterns[self.pattern_seq[pattern_in_song]]
 
         if row < 0 or row >= pat.n_rows:
-            raise IndexError(f"Invalid row index {row}")
+            raise IndexError(f"Invalid row index {row} (expected 0-{self.patterns[pattern].n_rows-1}).")
 
         if channel < 0 or channel >= pat.n_channels:
-            raise IndexError(f"Invalid channel index {channel}")
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
 
         return pat.data[channel][row]
 
@@ -1427,7 +1445,7 @@ class XMSong(Song):
         :return: None.
         """
         if bpm < 32 or bpm > 255:
-            raise ValueError(f"Invalid tempo {bpm}")
+            raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
 
         self.write_effect(pattern, channel, row, f"F{bpm:02X}")
 
@@ -1442,7 +1460,7 @@ class XMSong(Song):
         :return: None.
         """
         if ticks < 1 or ticks > 31:
-            raise ValueError(f"Invalid ticks per row {ticks}")
+            raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
 
         self.write_effect(pattern, channel, row, f"F{ticks:02X}")
 
@@ -1469,15 +1487,91 @@ class XMSong(Song):
     def get_instrument(self, inst_idx: int) -> Instrument:
         """Return the instrument at the given 1-based index."""
         if inst_idx <= 0 or inst_idx > len(self.instruments):
-            raise IndexError(f"Invalid instrument index {inst_idx}")
+            raise IndexError(f"Invalid instrument index {inst_idx} (expected 1-{len(self.instruments)}).")
         return self.instruments[inst_idx - 1]
+    def set_volume_envelope(
+        self,
+        inst_idx: int,
+        points: list[EnvelopePoint | tuple[int, int]],
+        sustain: int | None = None,
+        loop: tuple[int, int] | None = None,
+        enabled: bool = True,
+        sustain_enabled: bool | None = None,
+        loop_enabled: bool | None = None,
+        raw_type: int | None = None,
+    ) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_volume_envelope(
+            points,
+            sustain=sustain,
+            loop=loop,
+            enabled=enabled,
+            sustain_enabled=sustain_enabled,
+            loop_enabled=loop_enabled,
+            raw_type=raw_type,
+        )
+
+    def set_panning_envelope(
+        self,
+        inst_idx: int,
+        points: list[EnvelopePoint | tuple[int, int]],
+        sustain: int | None = None,
+        loop: tuple[int, int] | None = None,
+        enabled: bool = True,
+        sustain_enabled: bool | None = None,
+        loop_enabled: bool | None = None,
+        raw_type: int | None = None,
+    ) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_panning_envelope(
+            points,
+            sustain=sustain,
+            loop=loop,
+            enabled=enabled,
+            sustain_enabled=sustain_enabled,
+            loop_enabled=loop_enabled,
+            raw_type=raw_type,
+        )
+
+    def clear_volume_envelope(self, inst_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_volume_envelope([], enabled=False, sustain_enabled=False, loop_enabled=False)
+
+    def clear_panning_envelope(self, inst_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_panning_envelope([], enabled=False, sustain_enabled=False, loop_enabled=False)
+
+    def set_sample_for_note(self, inst_idx: int, note: str | int, sample_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_sample_for_note(note, sample_idx)
+
+    def duplicate_instrument(self, inst_idx: int) -> int:
+        return self.copy_instrument_from(self, inst_idx)
+
+    def duplicate_sample(self, inst_idx: int, sample_idx: int) -> int:
+        return self.copy_sample_from(self, inst_idx, sample_idx, inst_idx)
+
+    def set_sample_loop(
+        self,
+        inst_idx: int,
+        sample_idx: int,
+        start: int,
+        length: int,
+        loop_type: int,
+    ) -> None:
+        if loop_type not in (0, 1, 2):
+            raise ValueError(f"Invalid loop_type {loop_type}. Expected 0, 1, or 2.")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.repeat_point = max(0, start)
+        smp.repeat_len = max(0, length)
+        smp.loop_type = loop_type
 
     def remove_instrument(self, inst_idx: int) -> None:
         """
         Clears the instrument at the given 1-based index without changing indices.
         """
         if inst_idx <= 0 or inst_idx > len(self.instruments):
-            raise IndexError(f"Invalid instrument index {inst_idx}")
+            raise IndexError(f"Invalid instrument index {inst_idx} (expected 1-{len(self.instruments)}).")
         self.instruments[inst_idx - 1] = Instrument()
 
     def add_sample(self, inst_idx: int, sample: XMSample) -> int:
@@ -1494,14 +1588,14 @@ class XMSong(Song):
         """Return the sample at the given 1-based index within the instrument."""
         inst = self.get_instrument(inst_idx)
         if sample_idx <= 0 or sample_idx > len(inst.samples):
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{len(inst.samples)}).")
         return inst.samples[sample_idx - 1]
 
     def remove_sample(self, inst_idx: int, sample_idx: int) -> None:
         """Remove a sample and update the sample map accordingly."""
         inst = self.get_instrument(inst_idx)
         if sample_idx <= 0 or sample_idx > len(inst.samples):
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{len(inst.samples)}).")
         removed_idx = sample_idx - 1
         inst.samples.pop(removed_idx)
         if inst.sample_map:
@@ -1546,6 +1640,133 @@ class XMSong(Song):
         if not inst.sample_map:
             inst.sample_map = [0] * 96
         return len(inst.samples)
+
+    def load_sample_from_raw(
+        self,
+        inst_idx: int,
+        raw_bytes: bytes | bytearray | list[float] | tuple[float, ...],
+        sample_width: int,
+    ) -> int:
+        """
+        Loads a raw PCM sample and stores it in the given instrument.
+
+        :param inst_idx: The instrument index (1-based).
+        :param raw_bytes: Raw PCM bytes (mono) or a list of floats in [-1, 1].
+        :param sample_width: Sample width in bytes (1 for 8-bit, 2 for 16-bit).
+        :return: The 1-based sample index.
+        """
+        if sample_width not in (1, 2):
+            raise ValueError(f"Invalid sample_width {sample_width}. XM supports 1 (8-bit) or 2 (16-bit).")
+        inst = self.get_instrument(inst_idx)
+        sample = XMSample()
+
+        if isinstance(raw_bytes, (list, tuple)):
+            if sample_width == 1:
+                sample.waveform = array.array('b')
+                for s in raw_bytes:
+                    if s > 1.0:
+                        s = 1.0
+                    elif s < -1.0:
+                        s = -1.0
+                    sample.waveform.append(int(s * 127))
+                sample.is_16bit = False
+            else:
+                sample.waveform = array.array('h')
+                for s in raw_bytes:
+                    if s > 1.0:
+                        s = 1.0
+                    elif s < -1.0:
+                        s = -1.0
+                    sample.waveform.append(int(s * 32767))
+                sample.is_16bit = True
+        else:
+            if sample_width == 1:
+                sample.waveform = array.array('b')
+                sample.waveform.frombytes(raw_bytes)
+                sample.is_16bit = False
+            else:
+                sample.waveform = array.array('h')
+                sample.waveform.frombytes(raw_bytes)
+                sample.is_16bit = True
+
+        inst.samples.append(sample)
+        if not inst.sample_map:
+            inst.sample_map = [0] * 96
+        return len(inst.samples)
+
+    def set_sample_map_range(
+        self,
+        inst_idx: int,
+        sample_idx: int,
+        note_low: str | int,
+        note_high: str | int,
+    ) -> None:
+        """
+        Maps a sample to a range of notes (inclusive).
+        Notes can be given as strings (e.g. 'C-4') or indices (0-95).
+        """
+        low_idx = self._note_str_to_idx(note_low)
+        high_idx = self._note_str_to_idx(note_high)
+        if low_idx < 0 or high_idx > 95 or low_idx > high_idx:
+            raise ValueError(f"Invalid note range {note_low}-{note_high} (expected 0-95 and low<=high).")
+        inst = self.get_instrument(inst_idx)
+        if sample_idx < 1 or sample_idx > len(inst.samples):
+            raise ValueError(f"Invalid sample index {sample_idx} (instrument has {len(inst.samples)} samples).")
+        if not inst.sample_map or len(inst.sample_map) != 96:
+            inst.sample_map = [0] * 96
+        for note in range(low_idx, high_idx + 1):
+            inst.sample_map[note] = sample_idx - 1
+
+    def set_sample_map_all(self, inst_idx: int, sample_idx: int) -> None:
+        """
+        Maps a sample to all notes (0-95).
+        """
+        self.set_sample_map_range(inst_idx, sample_idx, 0, 95)
+
+    def copy_sample_from(
+        self,
+        src: 'XMSong',
+        src_inst_idx: int,
+        src_sample_idx: int,
+        dst_inst_idx: int,
+    ) -> int:
+        """
+        Copies a single sample from another song into a destination instrument.
+        Returns the new 1-based sample index in the destination instrument.
+        """
+        src_inst = src.get_instrument(src_inst_idx)
+        if src_sample_idx < 1 or src_sample_idx > len(src_inst.samples):
+            raise IndexError(f"Invalid sample index {src_sample_idx}")
+        smp = src_inst.samples[src_sample_idx - 1]
+        new_smp = XMSample()
+        new_smp.name = smp.name
+        new_smp.volume = smp.volume
+        new_smp.finetune = smp.finetune
+        new_smp.panning = smp.panning
+        new_smp.relative_note = smp.relative_note
+        new_smp._reserved = smp._reserved
+        new_smp.loop_type = smp.loop_type
+        new_smp.is_16bit = smp.is_16bit
+        new_smp.repeat_point = smp.repeat_point
+        new_smp.repeat_len = smp.repeat_len
+        new_smp.waveform = smp.waveform.__class__(smp.waveform.typecode, smp.waveform)
+        return self.add_sample(dst_inst_idx, new_smp)
+
+    def copy_samples_from(
+        self,
+        src: 'XMSong',
+        src_inst_idx: int,
+        src_sample_indices: list[int],
+        dst_inst_idx: int,
+    ) -> list[int]:
+        """
+        Copies multiple samples from another song into a destination instrument.
+        Returns the list of new 1-based sample indices.
+        """
+        new_indices: list[int] = []
+        for s_idx in src_sample_indices:
+            new_indices.append(self.copy_sample_from(src, src_inst_idx, s_idx, dst_inst_idx))
+        return new_indices
 
     def copy_instrument_from(self, src: 'XMSong', inst_idx: int) -> int:
         """
@@ -1662,7 +1883,7 @@ class XMSong(Song):
         :return: None.
         """
         if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         p = self.pattern_seq[pattern]
         pat = self.patterns[p]
@@ -1704,7 +1925,7 @@ class XMSong(Song):
         :return: The effective number of rows that gets played in the pattern.
         """
         if pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         loop_start_row = 0  # used by E6x effect
 
