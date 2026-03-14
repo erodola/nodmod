@@ -299,15 +299,15 @@ class Instrument:
             return note
         s = note.strip().upper()
         if len(s) != 3 or s[1] not in ('-', '#'):
-            raise ValueError(f"Invalid note format {note}")
+            raise ValueError(f"Invalid note format {note}. Expected like C-4 or F#3.")
         pitch = s[:2]
         try:
             octave = int(s[2])
         except ValueError as exc:
-            raise ValueError(f"Invalid note octave {note}") from exc
+            raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
         period_seq = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-']
         if pitch not in period_seq:
-            raise ValueError(f"Invalid note name {note}")
+            raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
         note_idx = period_seq.index(pitch)
         idx = (octave - 1) * 12 + note_idx
         return idx
@@ -321,7 +321,7 @@ class Instrument:
         """
         note_idx = self._note_str_to_idx(note)
         if note_idx < 0 or note_idx >= 96:
-            raise IndexError(f"Invalid note index {note}")
+            raise IndexError(f"Invalid note index {note} (expected 0-95).")
         n_samples = len(self.samples)
         if n_samples == 0:
             raise ValueError("Instrument has no samples")

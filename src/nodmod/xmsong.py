@@ -36,14 +36,14 @@ class XMSong(Song):
             return note
         s = note.strip().upper()
         if len(s) != 3 or s[1] not in ('-', '#'):
-            raise ValueError(f"Invalid note format {note}")
+            raise ValueError(f"Invalid note format {note}. Expected like C-4 or F#3.")
         pitch = s[:2]
         try:
             octave = int(s[2])
         except ValueError as exc:
-            raise ValueError(f"Invalid note octave {note}") from exc
+            raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
         if pitch not in Song.PERIOD_SEQ:
-            raise ValueError(f"Invalid note name {note}")
+            raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
         note_idx = Song.PERIOD_SEQ.index(pitch)
         idx = (octave - 1) * 12 + note_idx
         return idx
@@ -1560,7 +1560,7 @@ class XMSong(Song):
         loop_type: int,
     ) -> None:
         if loop_type not in (0, 1, 2):
-            raise ValueError(f"Invalid loop_type {loop_type}")
+            raise ValueError(f"Invalid loop_type {loop_type}. Expected 0, 1, or 2.")
         smp = self.get_sample(inst_idx, sample_idx)
         smp.repeat_point = max(0, start)
         smp.repeat_len = max(0, length)
@@ -1656,7 +1656,7 @@ class XMSong(Song):
         :return: The 1-based sample index.
         """
         if sample_width not in (1, 2):
-            raise ValueError(f"Invalid sample_width {sample_width}. XM supports 8-bit or 16-bit samples only.")
+            raise ValueError(f"Invalid sample_width {sample_width}. XM supports 8-bit (1) or 16-bit (2) samples only.")
         inst = self.get_instrument(inst_idx)
         sample = XMSample()
 
@@ -1708,7 +1708,7 @@ class XMSong(Song):
         low_idx = self._note_str_to_idx(note_low)
         high_idx = self._note_str_to_idx(note_high)
         if low_idx < 0 or high_idx > 95 or low_idx > high_idx:
-            raise ValueError(f"Invalid note range {note_low}-{note_high}.")
+            raise ValueError(f"Invalid note range {note_low}-{note_high}. Expected 0-95 and low<=high.")
         inst = self.get_instrument(inst_idx)
         if sample_idx < 1 or sample_idx > len(inst.samples):
             raise ValueError(f"Invalid sample index {sample_idx} for instrument with {len(inst.samples)} samples")
