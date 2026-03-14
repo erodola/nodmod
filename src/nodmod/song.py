@@ -191,6 +191,20 @@ class Song(ABC):
         pass
 
 
+    def add_pattern_to_seq(self, pattern_idx: int, pos: int | None = None) -> None:
+        """
+        Inserts an existing pattern index into the sequence at pos (or appends if None).
+        """
+        if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+            raise IndexError(f"Invalid pattern index {pattern_idx} (expected 0-{len(self.patterns)-1}).")
+        if pos is None:
+            self.pattern_seq.append(pattern_idx)
+            return
+        if pos < 0 or pos > len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence position {pos} (expected 0-{len(self.pattern_seq)}).")
+        self.pattern_seq = self.pattern_seq[:pos] + [pattern_idx] + self.pattern_seq[pos:]
+
+
     def set_pattern_seq(self, seq: list[int]) -> None:
         """
         Sets the pattern sequence after validating indices.
