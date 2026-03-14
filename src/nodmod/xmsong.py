@@ -1994,16 +1994,16 @@ class XMSong(Song):
     -------------------------------------
     '''
 
-    def add_pattern_to_seq(self, pattern_idx: int, pos: int | None = None) -> None:
+    def add_to_sequence(self, pattern_idx: int, pos: int | None = None) -> None:
         if len(self.pattern_seq) + 1 > 256:
             raise ValueError(f"Pattern sequence too long ({len(self.pattern_seq) + 1}). XM supports up to 256.")
-        super().add_pattern_to_seq(pattern_idx, pos)
+        super().add_to_sequence(pattern_idx, pos)
 
 
-    def set_pattern_seq(self, seq: list[int]) -> None:
+    def set_sequence(self, seq: list[int]) -> None:
         if len(seq) > 256:
             raise ValueError(f"Pattern sequence too long ({len(seq)}). XM supports up to 256.")
-        super().set_pattern_seq(seq)
+        super().set_sequence(seq)
 
 
     def resize_pattern(self, pattern: int, n_rows: int) -> None:

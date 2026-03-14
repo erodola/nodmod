@@ -223,7 +223,7 @@ class Song(ABC):
         pass
 
 
-    def add_pattern_to_seq(self, pattern_idx: int, pos: int | None = None) -> None:
+    def add_to_sequence(self, pattern_idx: int, pos: int | None = None) -> None:
         """
         Inserts an existing pattern index into the sequence at pos (or appends if None).
         """
@@ -237,7 +237,7 @@ class Song(ABC):
         self.pattern_seq = self.pattern_seq[:pos] + [pattern_idx] + self.pattern_seq[pos:]
 
 
-    def set_pattern_seq(self, seq: list[int]) -> None:
+    def set_sequence(self, seq: list[int]) -> None:
         """
         Sets the pattern sequence after validating indices.
         """
@@ -251,40 +251,40 @@ class Song(ABC):
         self.pattern_seq = list(seq)
 
 
-    def remove_patterns_after(self, pattern: int):
+    def remove_patterns_after(self, seq_idx: int):
         """
         Removes all patterns (in the pattern sequence) after the specified one.
 
-        :param pattern: The pattern index (within the song sequence) to remove all patterns after.
+        :param seq_idx: The pattern index (within the song sequence) to remove all patterns after.
         :return: None.
         """
 
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.pattern_seq = self.pattern_seq[:pattern + 1]
+        self.pattern_seq = self.pattern_seq[:seq_idx + 1]
 
     def remove_pattern(self, pattern: int) -> None:
         """
-        Removes a specified pattern from the song sequence (alias of remove_pattern_from_seq).
+        Removes a specified pattern from the song sequence (alias of remove_pattern).
         """
-        self.remove_pattern_from_seq(pattern)
+        self.remove_pattern(pattern)
 
-    def remove_pattern_from_seq(self, pattern: int) -> None:
+    def remove_pattern(self, seq_idx: int) -> None:
         """
         Removes a specified pattern from the song sequence.
 
         Example:
         - The current sequence is 2, 14, 1, 0, 0, 17
-        - self.remove_pattern_from_seq(3)
+        - self.remove_pattern(3)
         - The new sequence is 2, 14, 1, 0, 17
 
-        :param pattern: The pattern index (within the song sequence) to be removed.
+        :param seq_idx: The pattern index (within the song sequence) to be removed.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.pattern_seq = self.pattern_seq[:pattern] + self.pattern_seq[pattern + 1:]
+        self.pattern_seq = self.pattern_seq[:seq_idx] + self.pattern_seq[seq_idx + 1:]
 
     def remove_all_patterns(self, sequence_only: bool) -> None:
         """
@@ -297,44 +297,44 @@ class Song(ABC):
         if not sequence_only:
             self.patterns = []
 
-    def keep_pattern_from_seq(self, pattern: int) -> None:
+    def keep_pattern(self, seq_idx: int) -> None:
         """
         Removes all the other patterns different from 'pattern'.
 
-        :param pattern: The pattern index (within the song sequence) to be kept.
+        :param seq_idx: The pattern index (within the song sequence) to be kept.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.pattern_seq = [self.pattern_seq[pattern]]
+        self.pattern_seq = [self.pattern_seq[seq_idx]]
 
-    def insert_pattern(self, pattern: int, after: bool = True) -> int:
+    def insert_pattern(self, seq_idx: int, after: bool = True) -> int:
         """
         Inserts a copy of a pattern into the sequence, before or after the given index.
 
-        :param pattern: The pattern index (within the song sequence) to copy.
+        :param seq_idx: The pattern index (within the song sequence) to copy.
         :param after: If True, insert after; if False, insert before.
         :return: The index of the new pattern.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
-        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[pattern]]))
+        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[seq_idx]]))
         new_idx = len(self.patterns) - 1
-        seq_pos = pattern + 1 if after else pattern
+        seq_pos = seq_idx + 1 if after else seq_idx
         self.pattern_seq = self.pattern_seq[:seq_pos] + [new_idx] + self.pattern_seq[seq_pos:]
         return new_idx
 
-    def duplicate_pattern(self, pattern: int) -> int:
+    def duplicate_pattern(self, seq_idx: int) -> int:
         """
         Creates a fresh copy of the given pattern, and appends it at the end of the song sequence.
 
-        :param pattern: The pattern index (within the song sequence) to be duplicated.
+        :param seq_idx: The pattern index (within the song sequence) to be duplicated.
         :return: The index of the new pattern.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[pattern]]))
+        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[seq_idx]]))
         n = len(self.patterns) - 1
         self.pattern_seq.append(n)
 
