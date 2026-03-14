@@ -39,13 +39,13 @@ python -c "import nodmod; print('nodmod installed successfully!')"
 from nodmod import MODSong
 
 song = MODSong()
-song.load_from_file("music/spice_it_up.mod")
+song.load("music/spice_it_up.mod")
 
 # MOD channels are 0-based (0-3)
 song.mute_channel(2)
 song.mute_channel(3)
 
-song.save_to_file("music/ch1_2.mod")
+song.save("music/ch1_2.mod")
 ```
 
 ```python
@@ -64,10 +64,10 @@ smp.waveform = array.array('b', [0, 10, -10, 0])
 song.add_sample(inst, smp)
 song.set_sample_map_all(inst, 1)
 
-song.write_note(0, 0, 0, inst, "C-4", "")
+song.set_note(0, 0, 0, inst, "C-4", "")
 song.set_sample_panning(inst, 1, 192)
 
-song.save_to_file("music/lead.xm")
+song.save("music/lead.xm")
 ```
 
 ## Requirements
