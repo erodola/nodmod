@@ -692,6 +692,17 @@ class MODSong(Song):
 
         return effective_sample_rate
     
+    def validate_sample_loop(self, sample_idx: int) -> None:
+        smp = self.get_sample(sample_idx)
+        n = len(smp.waveform)
+        if smp.repeat_len <= 1:
+            return
+        if smp.repeat_point < 0:
+            raise ValueError("Loop start cannot be negative.")
+        if smp.repeat_point + smp.repeat_len > n:
+            raise ValueError(f"Loop end {smp.repeat_point + smp.repeat_len} exceeds sample length {n}.")
+
+
     def get_sample_duration(self, sample_idx: int, period: str = "C-5") -> float:
         """
         Returns the duration of the sample at the given index in seconds.

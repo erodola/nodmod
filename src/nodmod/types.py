@@ -410,3 +410,35 @@ class Instrument:
                 self.panning_type |= 0x02
             if loop_enabled:
                 self.panning_type |= 0x04
+
+
+    def _validate_envelope(self, points: list[EnvelopePoint], sustain: int, loop_start: int, loop_end: int, name: str) -> None:
+        if len(points) > 12:
+            raise ValueError(f"{name} envelope has {len(points)} points (XM supports up to 12).")
+        last_frame = -1
+        for p in points:
+            if p.frame < 0:
+                raise ValueError(f"{name} envelope frame {p.frame} is negative.")
+            if p.value < 0 or p.value > 64:
+                raise ValueError(f"{name} envelope value {p.value} out of range (0-64).")
+            if p.frame < last_frame:
+                raise ValueError(f"{name} envelope frames must be non-decreasing.")
+            last_frame = p.frame
+        if points:
+            max_idx = len(points) - 1
+            if sustain < 0 or sustain > max_idx:
+                raise ValueError(f"{name} sustain point {sustain} out of range (0-{max_idx}).")
+            if loop_start < 0 or loop_start > max_idx or loop_end < 0 or loop_end > max_idx:
+                raise ValueError(f"{name} loop points out of range (0-{max_idx}).")
+            if loop_start > loop_end:
+                raise ValueError(f"{name} loop start {loop_start} greater than loop end {loop_end}.")
+
+    def validate_volume_envelope(self) -> None:
+        self._validate_envelope(self.volume_envelope, self.volume_sustain_point, self.volume_loop_start, self.volume_loop_end, "volume")
+
+    def validate_panning_envelope(self) -> None:
+        self._validate_envelope(self.panning_envelope, self.panning_sustain_point, self.panning_loop_start, self.panning_loop_end, "panning")
+
+    def validate_envelopes(self) -> None:
+        self.validate_volume_envelope()
+        self.validate_panning_envelope()

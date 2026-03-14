@@ -7,6 +7,7 @@ import pydub  # needed for loading WAV samples
 
 from nodmod import Song
 from nodmod import XMSample
+from nodmod import Sample
 from nodmod import Instrument
 from nodmod import EnvelopePoint
 from nodmod import Pattern
@@ -1615,6 +1616,25 @@ class XMSong(Song):
         smp.repeat_point = max(0, start)
         smp.repeat_len = max(0, length)
         smp.loop_type = loop_type
+
+    def validate_sample_loop(self, inst_idx: int, sample_idx: int) -> None:
+        smp = self.get_sample(inst_idx, sample_idx)
+        n = len(smp.waveform)
+        if smp.loop_type == Sample.LOOP_NONE:
+            return
+        if smp.repeat_len <= 0:
+            raise ValueError("Loop length must be >0 when loop_type is enabled.")
+        if smp.repeat_point < 0:
+            raise ValueError("Loop start cannot be negative.")
+        if smp.repeat_point + smp.repeat_len > n:
+            raise ValueError(f"Loop end {smp.repeat_point + smp.repeat_len} exceeds sample length {n}.")
+
+    def validate_instrument(self, inst_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.validate_envelopes()
+        for sidx in range(1, len(inst.samples) + 1):
+            self.validate_sample_loop(inst_idx, sidx)
+
 
     def remove_instrument(self, inst_idx: int) -> None:
         """
