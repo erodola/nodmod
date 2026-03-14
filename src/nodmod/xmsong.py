@@ -1924,6 +1924,28 @@ class XMSong(Song):
     -------------------------------------
     '''
 
+    def resize_pattern(self, pattern: int, n_rows: int) -> None:
+        """
+        Resizes a pattern in the sequence to the given number of rows (1-256).
+        Truncates or extends with empty notes as needed.
+        """
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if n_rows < 1 or n_rows > 256:
+            raise ValueError(f"Invalid row count {n_rows} (expected 1-256).")
+        p = self.pattern_seq[pattern]
+        pat = self.patterns[p]
+        if n_rows == pat.n_rows:
+            return
+        if n_rows < pat.n_rows:
+            for c in range(pat.n_channels):
+                pat.data[c] = pat.data[c][:n_rows]
+        else:
+            for c in range(pat.n_channels):
+                pat.data[c].extend([XMNote() for _ in range(n_rows - pat.n_rows)])
+        pat.n_rows = n_rows
+
+
     def clear_pattern(self, pattern: int):
         """
         Clears completely a specified pattern.

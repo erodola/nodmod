@@ -852,6 +852,14 @@ class MODSong(Song):
     -------------------------------------
     '''
 
+    def resize_pattern(self, pattern: int, n_rows: int) -> None:
+        """
+        MOD patterns have a fixed length of 64 rows; resizing is not supported.
+        """
+        if n_rows != MODSong.ROWS:
+            raise ValueError(f"MOD patterns have fixed 64 rows (got {n_rows}).")
+
+
     def clear_pattern(self, pattern: int):
         """
         Clears completely a specified pattern.
