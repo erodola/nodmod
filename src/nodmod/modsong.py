@@ -975,15 +975,15 @@ class MODSong(Song):
         Clears completely a specified channel in the entire song.
         WARNING: Don't use this as a way to mute channels, as it also removes global effects.
 
-        :param channel: The channel index to mute, 1 to 4.
+        :param channel: The channel index to mute, 0 to 3.
         :return: None.
         """
-        if channel <= 0 or channel > MODSong.CHANNELS:
+        if channel < 0 or channel >= MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
-                self.patterns[p].data[channel - 1][r] = Note()
+                self.patterns[p].data[channel][r] = Note()
 
     def mute_channel(self, channel: int):
         """
@@ -991,15 +991,15 @@ class MODSong(Song):
         This clears notes, instruments, and channel-specific effects but keeps global effects
         like speed/BPM changes (Fxx), pattern breaks (Bxx), position jumps (Dxx), volume set (Cxx), and extended effects (E**).
 
-        :param channel: The channel index to mute, 1 to 4.
+        :param channel: The channel index to mute, 0 to 3.
         :return: None.
         """
-        if channel <= 0 or channel > MODSong.CHANNELS:
+        if channel < 0 or channel >= MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
-                note = self.patterns[p].data[channel - 1][r]
+                note = self.patterns[p].data[channel][r]
                 
                 # Check if this note has a global effect that should be preserved
                 global_effect = ""
@@ -1015,7 +1015,7 @@ class MODSong(Song):
                 if global_effect:
                     new_note.effect = global_effect
                 
-                self.patterns[p].data[channel - 1][r] = new_note
+                self.patterns[p].data[channel][r] = new_note
 
     '''
     -------------------------------------
