@@ -937,6 +937,14 @@ class MODSong(Song):
     -------------------------------------
     '''
 
+    def add_channel(self, count: int = 1) -> None:
+        if count <= 0:
+            raise ValueError(f"Invalid channel count {count} (expected >=1).")
+        raise NotImplementedError("MOD format has fixed 4 channels; cannot add channels.")
+
+    def remove_channel(self, channel: int) -> None:
+        raise NotImplementedError("MOD format has fixed 4 channels; cannot remove channels.")
+
     def clear_channel(self, channel: int):
         """
         Clears completely a specified channel in the entire song.
@@ -956,7 +964,7 @@ class MODSong(Song):
         """
         Mutes a specified channel in the entire song while preserving global effects.
         This clears notes, instruments, and channel-specific effects but keeps global effects
-        like speed/BPM changes (Fxx), pattern breaks (Bxx), and position jumps (Dxx).
+        like speed/BPM changes (Fxx), pattern breaks (Bxx), position jumps (Dxx), volume set (Cxx), and extended effects (E**).
 
         :param channel: The channel index to mute, 1 to 4.
         :return: None.
@@ -973,7 +981,7 @@ class MODSong(Song):
                 if note.effect != "":
                     effect_type = note.effect[0]
                     # Preserve global effects: F (speed/BPM), B (pattern break), D (position jump)
-                    if effect_type in ['F', 'B', 'D']:
+                    if effect_type in ['F', 'B', 'D', 'C', 'E']:
                         global_effect = note.effect
                 
                 # Create a new empty note

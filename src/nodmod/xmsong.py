@@ -1406,6 +1406,56 @@ class XMSong(Song):
 
         pat.data[channel][row] = new_note
 
+    def add_channel(self, count: int = 1) -> None:
+        if count <= 0:
+            raise ValueError(f"Invalid channel count {count} (expected >=1).")
+        if self.n_channels + count > 32:
+            raise ValueError(f"Too many channels: {self.n_channels + count} (XM supports 1-32).")
+        for pat in self.patterns:
+            for _ in range(count):
+                pat.data.append([XMNote() for _ in range(pat.n_rows)])
+            pat.n_channels += count
+        self.n_channels += count
+
+    def remove_channel(self, channel: int) -> None:
+        if self.n_channels <= 1:
+            raise ValueError("Cannot remove last channel (XM requires at least 1).")
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+        for pat in self.patterns:
+            pat.data.pop(channel)
+            pat.n_channels -= 1
+        self.n_channels -= 1
+
+    def mute_channel(self, channel: int) -> None:
+        """
+        Mutes a specified channel in the entire song while preserving global effects.
+        This clears notes, instruments, and channel-specific effects but keeps global effects
+        like speed/BPM changes (Fxx), pattern breaks (Bxx), position jumps (Dxx), and extended effects (E**).
+        """
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+
+        for pat in self.patterns:
+            for r in range(pat.n_rows):
+                note = pat.data[channel][r]
+                global_effect = ""
+                if note.effect:
+                    effect_type = note.effect[0]
+                    if effect_type in ['F', 'B', 'D', 'E']:
+                        global_effect = note.effect
+                new_note = XMNote()
+                if global_effect:
+                    new_note.effect = global_effect
+                pat.data[channel][r] = new_note
+
+    def clear_channel(self, channel: int) -> None:
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+        for pat in self.patterns:
+            for r in range(pat.n_rows):
+                pat.data[channel][r] = XMNote()
+
     def get_note(self, pattern_in_song: int, row: int, channel: int) -> XMNote:
         """
         Returns the XMNote object at the given pattern, row and channel.
