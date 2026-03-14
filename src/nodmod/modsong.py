@@ -692,6 +692,28 @@ class MODSong(Song):
 
         return effective_sample_rate
     
+    def set_sample_name(self, sample_idx: int, name: str) -> None:
+        smp = self.get_sample(sample_idx)
+        smp.name = name
+
+    def set_sample_volume(self, sample_idx: int, volume: int) -> None:
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid volume {volume} (expected 0-64).")
+        smp = self.get_sample(sample_idx)
+        smp.volume = volume
+
+    def set_sample_finetune(self, sample_idx: int, finetune: int) -> None:
+        if finetune < 0 or finetune > 15:
+            raise ValueError(f"Invalid finetune {finetune} (expected 0-15).")
+        smp = self.get_sample(sample_idx)
+        smp.finetune = finetune
+
+    def set_sample_loop(self, sample_idx: int, start: int, length: int) -> None:
+        smp = self.get_sample(sample_idx)
+        smp.repeat_point = max(0, start)
+        smp.repeat_len = max(0, length)
+
+
     def validate_sample_loop(self, sample_idx: int) -> None:
         smp = self.get_sample(sample_idx)
         n = len(smp.waveform)

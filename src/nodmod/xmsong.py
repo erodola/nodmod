@@ -1602,6 +1602,56 @@ class XMSong(Song):
     def duplicate_sample(self, inst_idx: int, sample_idx: int) -> int:
         return self.copy_sample_from(self, inst_idx, sample_idx, inst_idx)
 
+    def set_sample_name(self, inst_idx: int, sample_idx: int, name: str) -> None:
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.name = name
+
+    def set_sample_volume(self, inst_idx: int, sample_idx: int, volume: int) -> None:
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid volume {volume} (expected 0-64).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.volume = volume
+
+    def set_sample_finetune(self, inst_idx: int, sample_idx: int, finetune: int) -> None:
+        if finetune < -128 or finetune > 127:
+            raise ValueError(f"Invalid finetune {finetune} (expected -128 to 127).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.finetune = finetune
+
+    def set_sample_panning(self, inst_idx: int, sample_idx: int, panning: int) -> None:
+        if panning < 0 or panning > 255:
+            raise ValueError(f"Invalid panning {panning} (expected 0-255).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.panning = panning
+
+    def set_sample_relative_note(self, inst_idx: int, sample_idx: int, rel: int) -> None:
+        if rel < -96 or rel > 95:
+            raise ValueError(f"Invalid relative note {rel} (expected -96 to 95).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.relative_note = rel
+
+    def set_instrument_name(self, inst_idx: int, name: str) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.name = name
+
+    def set_instrument_fadeout(self, inst_idx: int, fadeout: int) -> None:
+        if fadeout < 0 or fadeout > 65535:
+            raise ValueError(f"Invalid fadeout {fadeout} (expected 0-65535).")
+        inst = self.get_instrument(inst_idx)
+        inst.volume_fadeout = fadeout
+
+    def set_instrument_vibrato(self, inst_idx: int, vib_type: int, sweep: int, depth: int, rate: int) -> None:
+        if vib_type < 0 or vib_type > 3:
+            raise ValueError(f"Invalid vibrato type {vib_type} (expected 0-3).")
+        if sweep < 0 or sweep > 255 or depth < 0 or depth > 255 or rate < 0 or rate > 255:
+            raise ValueError("Invalid vibrato parameters (expected 0-255).")
+        inst = self.get_instrument(inst_idx)
+        inst.vibrato_type = vib_type
+        inst.vibrato_sweep = sweep
+        inst.vibrato_depth = depth
+        inst.vibrato_rate = rate
+
+
     def set_sample_loop(
         self,
         inst_idx: int,
