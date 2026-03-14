@@ -80,7 +80,7 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def load_from_file(self, fname: str, verbose: bool = True):
+    def load(self, fname: str, verbose: bool = True):
         """
         Loads a song from a standard MOD file.
 
@@ -233,7 +233,7 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_as_ascii(self, fname: str, verbose: bool = True):
+    def save_ascii(self, fname: str, verbose: bool = True):
         """
         Writes the song as readable text with ASCII encoding.
 
@@ -257,7 +257,7 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_to_file(self, fname: str, verbose: bool = True):
+    def save(self, fname: str, verbose: bool = True):
         """
         Saves the song as a standard MOD file.
 
@@ -394,7 +394,6 @@ class MODSong(Song):
             print('done.')
 
     # Alias for backwards compatibility
-    save_as_mod = save_to_file
     
     '''
     -------------------------------------
@@ -1127,7 +1126,7 @@ class MODSong(Song):
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
 
-        self.write_effect(pattern, channel, row, f"F{bpm:02X}")
+        self.set_effect(pattern, channel, row, f"F{bpm:02X}")
         
     def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
         """
@@ -1142,7 +1141,7 @@ class MODSong(Song):
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
 
-        self.write_effect(pattern, channel, row, f"F{ticks:02X}")
+        self.set_effect(pattern, channel, row, f"F{ticks:02X}")
 
     def set_portamento(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1159,9 +1158,9 @@ class MODSong(Song):
             raise ValueError(f"Invalid portamento slide {slide} (expected 0-255).")
 
         if slide > 0:
-            self.write_effect(pattern, channel, row, f"1{slide:02X}")
+            self.set_effect(pattern, channel, row, f"1{slide:02X}")
         elif slide < 0:
-            self.write_effect(pattern, channel, row, f"2{slide:02X}")
+            self.set_effect(pattern, channel, row, f"2{slide:02X}")
 
     def set_tone_portamento(self, pattern: int, channel: int, row: int, speed: int):
         """
@@ -1179,7 +1178,7 @@ class MODSong(Song):
         if speed < 0 or speed > 255:
             raise ValueError(f"Invalid tone portamento speed {speed} (expected 0-255).")
 
-        self.write_effect(pattern, channel, row, f"3{speed:02X}")
+        self.set_effect(pattern, channel, row, f"3{speed:02X}")
 
     def set_tone_portamento_slide(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1200,7 +1199,7 @@ class MODSong(Song):
         elif slide < 0:
             efx = -slide
         
-        self.write_effect(pattern, channel, row, f"5{efx:02X}")
+        self.set_effect(pattern, channel, row, f"5{efx:02X}")
         
     def set_volume(self, pattern: int, channel: int, row: int, volume: int):
         """
@@ -1215,7 +1214,7 @@ class MODSong(Song):
         if volume < 0 or volume > 64:
             raise ValueError(f"Invalid volume {volume} (expected 0-64).")
 
-        self.write_effect(pattern, channel, row, f"C{volume:02X}")
+        self.set_effect(pattern, channel, row, f"C{volume:02X}")
 
     def set_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1236,7 +1235,7 @@ class MODSong(Song):
         elif slide < 0:
             efx = -slide
         
-        self.write_effect(pattern, channel, row, f"A{efx:02X}")
+        self.set_effect(pattern, channel, row, f"A{efx:02X}")
 
     def set_vibrato(self, pattern: int, channel: int, row: int, speed: int, depth: int):
         """
@@ -1258,7 +1257,7 @@ class MODSong(Song):
         
         efx = 16 * speed + depth
         
-        self.write_effect(pattern, channel, row, f"4{efx:02X}")
+        self.set_effect(pattern, channel, row, f"4{efx:02X}")
 
     def set_vibrato_slide(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1279,7 +1278,7 @@ class MODSong(Song):
         elif slide < 0:
             efx = -slide
         
-        self.write_effect(pattern, channel, row, f"6{efx:02X}")
+        self.set_effect(pattern, channel, row, f"6{efx:02X}")
 
     def set_tremolo(self, pattern: int, channel: int, row: int, speed: int, depth: int):
         """
@@ -1301,4 +1300,4 @@ class MODSong(Song):
         
         efx = 16 * speed + depth
         
-        self.write_effect(pattern, channel, row, f"7{efx:02X}")
+        self.set_effect(pattern, channel, row, f"7{efx:02X}")

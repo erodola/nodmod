@@ -97,7 +97,7 @@ class XMSong(Song):
     -------------------------------------
     '''
 
-    def save_as_ascii(self, fname: str, verbose: bool = True):
+    def save_ascii(self, fname: str, verbose: bool = True):
         """
         Writes the song as readable text with ASCII encoding.
         
@@ -130,7 +130,7 @@ class XMSong(Song):
         if verbose:
             print('done.')
 
-    def save_to_file(self, fname: str, verbose: bool = True):
+    def save(self, fname: str, verbose: bool = True):
         """
         Saves the song as a standard XM file.
         
@@ -532,7 +532,7 @@ class XMSong(Song):
         if verbose:
             print('done.')
 
-    def load_from_file(self, fname: str, verbose: bool = True):
+    def load(self, fname: str, verbose: bool = True):
         """
         Loads a song from a standard XM file.
 
@@ -1349,7 +1349,7 @@ class XMSong(Song):
     -------------------------------------
     '''
 
-    def write_note(
+    def set_note(
         self,
         pattern: int,
         channel: int,
@@ -1498,7 +1498,7 @@ class XMSong(Song):
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
 
-        self.write_effect(pattern, channel, row, f"F{bpm:02X}")
+        self.set_effect(pattern, channel, row, f"F{bpm:02X}")
 
     def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
         """
@@ -1513,7 +1513,7 @@ class XMSong(Song):
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
 
-        self.write_effect(pattern, channel, row, f"F{ticks:02X}")
+        self.set_effect(pattern, channel, row, f"F{ticks:02X}")
 
     '''
     -------------------------------------
