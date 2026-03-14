@@ -204,6 +204,12 @@ class Song(ABC):
 
         self.pattern_seq = self.pattern_seq[:pattern + 1]
 
+    def remove_pattern(self, pattern: int) -> None:
+        """
+        Removes a specified pattern from the song sequence (alias of remove_pattern_from_seq).
+        """
+        self.remove_pattern_from_seq(pattern)
+
     def remove_pattern_from_seq(self, pattern: int) -> None:
         """
         Removes a specified pattern from the song sequence.
@@ -241,6 +247,22 @@ class Song(ABC):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         self.pattern_seq = [self.pattern_seq[pattern]]
+
+    def insert_pattern(self, pattern: int, after: bool = True) -> int:
+        """
+        Inserts a copy of a pattern into the sequence, before or after the given index.
+
+        :param pattern: The pattern index (within the song sequence) to copy.
+        :param after: If True, insert after; if False, insert before.
+        :return: The index of the new pattern.
+        """
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[pattern]]))
+        new_idx = len(self.patterns) - 1
+        seq_pos = pattern + 1 if after else pattern
+        self.pattern_seq = self.pattern_seq[:seq_pos] + [new_idx] + self.pattern_seq[seq_pos:]
+        return new_idx
 
     def duplicate_pattern(self, pattern: int) -> int:
         """
