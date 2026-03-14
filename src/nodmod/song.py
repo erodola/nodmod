@@ -191,6 +191,20 @@ class Song(ABC):
         pass
 
 
+    def set_pattern_seq(self, seq: list[int]) -> None:
+        """
+        Sets the pattern sequence after validating indices.
+        """
+        if not isinstance(seq, list):
+            raise ValueError("Pattern sequence must be a list of integers.")
+        for idx in seq:
+            if not isinstance(idx, int):
+                raise ValueError(f"Invalid pattern index {idx} (expected int).")
+            if idx < 0 or idx >= len(self.patterns):
+                raise IndexError(f"Invalid pattern index {idx} (expected 0-{len(self.patterns)-1}).")
+        self.pattern_seq = list(seq)
+
+
     def remove_patterns_after(self, pattern: int):
         """
         Removes all patterns (in the pattern sequence) after the specified one.

@@ -860,6 +860,12 @@ class MODSong(Song):
             raise ValueError(f"MOD patterns have fixed 64 rows (got {n_rows}).")
 
 
+    def set_pattern_seq(self, seq: list[int]) -> None:
+        if len(seq) > 128:
+            raise ValueError(f"Pattern sequence too long ({len(seq)}). MOD supports up to 128.")
+        super().set_pattern_seq(seq)
+
+
     def clear_pattern(self, pattern: int):
         """
         Clears completely a specified pattern.

@@ -1924,6 +1924,12 @@ class XMSong(Song):
     -------------------------------------
     '''
 
+    def set_pattern_seq(self, seq: list[int]) -> None:
+        if len(seq) > 256:
+            raise ValueError(f"Pattern sequence too long ({len(seq)}). XM supports up to 256.")
+        super().set_pattern_seq(seq)
+
+
     def resize_pattern(self, pattern: int, n_rows: int) -> None:
         """
         Resizes a pattern in the sequence to the given number of rows (1-256).
