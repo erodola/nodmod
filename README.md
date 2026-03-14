@@ -58,7 +58,9 @@ song.add_pattern(64)
 
 inst = song.new_instrument("Lead")
 smp = XMSample()
-smp.waveform = smp.waveform.__class__([0, 10, -10, 0])
+import array
+
+smp.waveform = array.array('b', [0, 10, -10, 0])
 song.add_sample(inst, smp)
 song.set_sample_map_all(inst, 1)
 
