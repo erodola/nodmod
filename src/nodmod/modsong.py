@@ -763,6 +763,61 @@ class MODSong(Song):
 
         return self.samples[sample_idx - 1]
 
+    def list_samples(self) -> list[Sample]:
+        """
+        Returns the list of samples in order (31 slots).
+        """
+        return self.samples
+
+    def set_sample(self, sample_idx: int, sample: Sample) -> None:
+        """
+        Replaces the sample at the given index.
+        """
+        if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx}")
+        self.samples[sample_idx - 1] = sample
+
+    def copy_sample_from(self, src: 'MODSong', src_sample_idx: int, dst_sample_idx: int = 0) -> int:
+        """
+        Copies a single sample from another MODSong into this song.
+        Returns the destination 1-based sample index.
+        """
+        if src_sample_idx <= 0 or src_sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {src_sample_idx}")
+        if dst_sample_idx < 0 or dst_sample_idx > MODSong.SAMPLES:
+            raise IndexError(f"Invalid sample index {dst_sample_idx}")
+
+        src_smp = src.samples[src_sample_idx - 1]
+        new_smp = Sample()
+        new_smp.name = src_smp.name
+        new_smp.finetune = src_smp.finetune
+        new_smp.volume = src_smp.volume
+        new_smp.repeat_point = src_smp.repeat_point
+        new_smp.repeat_len = src_smp.repeat_len
+        new_smp.waveform = src_smp.waveform.__class__(src_smp.waveform.typecode, src_smp.waveform)
+        new_smp.tune = src_smp.tune
+
+        if dst_sample_idx == 0:
+            for i in range(MODSong.SAMPLES):
+                if len(self.samples[i].waveform) == 0:
+                    dst_sample_idx = i + 1
+                    break
+            if dst_sample_idx == 0:
+                raise ValueError("Couldn't find an empty slot for the new sample.")
+
+        self.samples[dst_sample_idx - 1] = new_smp
+        return dst_sample_idx
+
+    def copy_samples_from(self, src: 'MODSong', src_sample_indices: list[int]) -> list[int]:
+        """
+        Copies multiple samples from another MODSong into this song.
+        Returns the list of destination sample indices.
+        """
+        new_indices: list[int] = []
+        for idx in src_sample_indices:
+            new_indices.append(self.copy_sample_from(src, idx, 0))
+        return new_indices
+
     def remove_sample(self, sample_idx: int):
         """
         Deletes the sample from the sample bank.

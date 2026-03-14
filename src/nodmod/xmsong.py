@@ -30,6 +30,23 @@ class XMSong(Song):
         """True if using linear frequency table, False for Amiga frequency table."""
         return (self.flags & 0x01) == 1
     
+    def _note_str_to_idx(self, note: str | int) -> int:
+        if isinstance(note, int):
+            return note
+        s = note.strip().upper()
+        if len(s) != 3 or s[1] not in ('-', '#'):
+            raise ValueError(f"Invalid note format {note}")
+        pitch = s[:2]
+        try:
+            octave = int(s[2])
+        except ValueError as exc:
+            raise ValueError(f"Invalid note octave {note}") from exc
+        if pitch not in Song.PERIOD_SEQ:
+            raise ValueError(f"Invalid note name {note}")
+        note_idx = Song.PERIOD_SEQ.index(pitch)
+        idx = (octave - 1) * 12 + note_idx
+        return idx
+
     def __init__(self):
         super().__init__()
         
@@ -1546,6 +1563,111 @@ class XMSong(Song):
         if not inst.sample_map:
             inst.sample_map = [0] * 96
         return len(inst.samples)
+
+    def load_sample_from_raw(
+        self,
+        inst_idx: int,
+        raw_bytes: bytes | bytearray,
+        sample_width: int,
+    ) -> int:
+        """
+        Loads a raw PCM sample and stores it in the given instrument.
+
+        :param inst_idx: The instrument index (1-based).
+        :param raw_bytes: Raw PCM bytes (mono).
+        :param sample_width: Sample width in bytes (1 for 8-bit, 2 for 16-bit).
+        :return: The 1-based sample index.
+        """
+        if sample_width not in (1, 2):
+            raise ValueError(f"Invalid sample_width {sample_width}. XM supports 8-bit or 16-bit samples only.")
+        inst = self.get_instrument(inst_idx)
+        sample = XMSample()
+        if sample_width == 1:
+            sample.waveform = array.array('b')
+            sample.waveform.frombytes(raw_bytes)
+            sample.is_16bit = False
+        else:
+            sample.waveform = array.array('h')
+            sample.waveform.frombytes(raw_bytes)
+            sample.is_16bit = True
+        inst.samples.append(sample)
+        if not inst.sample_map:
+            inst.sample_map = [0] * 96
+        return len(inst.samples)
+
+    def set_sample_map_range(
+        self,
+        inst_idx: int,
+        sample_idx: int,
+        note_low: str | int,
+        note_high: str | int,
+    ) -> None:
+        """
+        Maps a sample to a range of notes (inclusive).
+        Notes can be given as strings (e.g. 'C-4') or indices (0-95).
+        """
+        low_idx = self._note_str_to_idx(note_low)
+        high_idx = self._note_str_to_idx(note_high)
+        if low_idx < 0 or high_idx > 95 or low_idx > high_idx:
+            raise ValueError(f"Invalid note range {note_low}-{note_high}.")
+        inst = self.get_instrument(inst_idx)
+        if sample_idx < 1 or sample_idx > len(inst.samples):
+            raise ValueError(f"Invalid sample index {sample_idx} for instrument with {len(inst.samples)} samples")
+        if not inst.sample_map or len(inst.sample_map) != 96:
+            inst.sample_map = [0] * 96
+        for note in range(low_idx, high_idx + 1):
+            inst.sample_map[note] = sample_idx - 1
+
+    def set_sample_map_all(self, inst_idx: int, sample_idx: int) -> None:
+        """
+        Maps a sample to all notes (0-95).
+        """
+        self.set_sample_map_range(inst_idx, sample_idx, 0, 95)
+
+    def copy_sample_from(
+        self,
+        src: 'XMSong',
+        src_inst_idx: int,
+        src_sample_idx: int,
+        dst_inst_idx: int,
+    ) -> int:
+        """
+        Copies a single sample from another song into a destination instrument.
+        Returns the new 1-based sample index in the destination instrument.
+        """
+        src_inst = src.get_instrument(src_inst_idx)
+        if src_sample_idx < 1 or src_sample_idx > len(src_inst.samples):
+            raise IndexError(f"Invalid sample index {src_sample_idx}")
+        smp = src_inst.samples[src_sample_idx - 1]
+        new_smp = XMSample()
+        new_smp.name = smp.name
+        new_smp.volume = smp.volume
+        new_smp.finetune = smp.finetune
+        new_smp.panning = smp.panning
+        new_smp.relative_note = smp.relative_note
+        new_smp._reserved = smp._reserved
+        new_smp.loop_type = smp.loop_type
+        new_smp.is_16bit = smp.is_16bit
+        new_smp.repeat_point = smp.repeat_point
+        new_smp.repeat_len = smp.repeat_len
+        new_smp.waveform = smp.waveform.__class__(smp.waveform.typecode, smp.waveform)
+        return self.add_sample(dst_inst_idx, new_smp)
+
+    def copy_samples_from(
+        self,
+        src: 'XMSong',
+        src_inst_idx: int,
+        src_sample_indices: list[int],
+        dst_inst_idx: int,
+    ) -> list[int]:
+        """
+        Copies multiple samples from another song into a destination instrument.
+        Returns the list of new 1-based sample indices.
+        """
+        new_indices: list[int] = []
+        for s_idx in src_sample_indices:
+            new_indices.append(self.copy_sample_from(src, src_inst_idx, s_idx, dst_inst_idx))
+        return new_indices
 
     def copy_instrument_from(self, src: 'XMSong', inst_idx: int) -> int:
         """
