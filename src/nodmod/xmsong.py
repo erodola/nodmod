@@ -2,6 +2,7 @@ import array
 import copy
 import shutil
 import warnings
+import struct
 import pydub  # needed for loading WAV samples
 
 from nodmod import Song
@@ -1488,6 +1489,82 @@ class XMSong(Song):
         if inst_idx <= 0 or inst_idx > len(self.instruments):
             raise IndexError(f"Invalid instrument index {inst_idx}")
         return self.instruments[inst_idx - 1]
+    def set_volume_envelope(
+        self,
+        inst_idx: int,
+        points: list[EnvelopePoint | tuple[int, int]],
+        sustain: int | None = None,
+        loop: tuple[int, int] | None = None,
+        enabled: bool = True,
+        sustain_enabled: bool | None = None,
+        loop_enabled: bool | None = None,
+        raw_type: int | None = None,
+    ) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_volume_envelope(
+            points,
+            sustain=sustain,
+            loop=loop,
+            enabled=enabled,
+            sustain_enabled=sustain_enabled,
+            loop_enabled=loop_enabled,
+            raw_type=raw_type,
+        )
+
+    def set_panning_envelope(
+        self,
+        inst_idx: int,
+        points: list[EnvelopePoint | tuple[int, int]],
+        sustain: int | None = None,
+        loop: tuple[int, int] | None = None,
+        enabled: bool = True,
+        sustain_enabled: bool | None = None,
+        loop_enabled: bool | None = None,
+        raw_type: int | None = None,
+    ) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_panning_envelope(
+            points,
+            sustain=sustain,
+            loop=loop,
+            enabled=enabled,
+            sustain_enabled=sustain_enabled,
+            loop_enabled=loop_enabled,
+            raw_type=raw_type,
+        )
+
+    def clear_volume_envelope(self, inst_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_volume_envelope([], enabled=False, sustain_enabled=False, loop_enabled=False)
+
+    def clear_panning_envelope(self, inst_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_panning_envelope([], enabled=False, sustain_enabled=False, loop_enabled=False)
+
+    def set_sample_for_note(self, inst_idx: int, note: str | int, sample_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.set_sample_for_note(note, sample_idx)
+
+    def duplicate_instrument(self, inst_idx: int) -> int:
+        return self.copy_instrument_from(self, inst_idx)
+
+    def duplicate_sample(self, inst_idx: int, sample_idx: int) -> int:
+        return self.copy_sample_from(self, inst_idx, sample_idx, inst_idx)
+
+    def set_sample_loop(
+        self,
+        inst_idx: int,
+        sample_idx: int,
+        start: int,
+        length: int,
+        loop_type: int,
+    ) -> None:
+        if loop_type not in (0, 1, 2):
+            raise ValueError(f"Invalid loop_type {loop_type}")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.repeat_point = max(0, start)
+        smp.repeat_len = max(0, length)
+        smp.loop_type = loop_type
 
     def remove_instrument(self, inst_idx: int) -> None:
         """
@@ -1567,14 +1644,14 @@ class XMSong(Song):
     def load_sample_from_raw(
         self,
         inst_idx: int,
-        raw_bytes: bytes | bytearray,
+        raw_bytes: bytes | bytearray | list[float] | tuple[float, ...],
         sample_width: int,
     ) -> int:
         """
         Loads a raw PCM sample and stores it in the given instrument.
 
         :param inst_idx: The instrument index (1-based).
-        :param raw_bytes: Raw PCM bytes (mono).
+        :param raw_bytes: Raw PCM bytes (mono) or a list of floats in [-1, 1].
         :param sample_width: Sample width in bytes (1 for 8-bit, 2 for 16-bit).
         :return: The 1-based sample index.
         """
@@ -1582,14 +1659,36 @@ class XMSong(Song):
             raise ValueError(f"Invalid sample_width {sample_width}. XM supports 8-bit or 16-bit samples only.")
         inst = self.get_instrument(inst_idx)
         sample = XMSample()
-        if sample_width == 1:
-            sample.waveform = array.array('b')
-            sample.waveform.frombytes(raw_bytes)
-            sample.is_16bit = False
+
+        if isinstance(raw_bytes, (list, tuple)):
+            if sample_width == 1:
+                sample.waveform = array.array('b')
+                for s in raw_bytes:
+                    if s > 1.0:
+                        s = 1.0
+                    elif s < -1.0:
+                        s = -1.0
+                    sample.waveform.append(int(s * 127))
+                sample.is_16bit = False
+            else:
+                sample.waveform = array.array('h')
+                for s in raw_bytes:
+                    if s > 1.0:
+                        s = 1.0
+                    elif s < -1.0:
+                        s = -1.0
+                    sample.waveform.append(int(s * 32767))
+                sample.is_16bit = True
         else:
-            sample.waveform = array.array('h')
-            sample.waveform.frombytes(raw_bytes)
-            sample.is_16bit = True
+            if sample_width == 1:
+                sample.waveform = array.array('b')
+                sample.waveform.frombytes(raw_bytes)
+                sample.is_16bit = False
+            else:
+                sample.waveform = array.array('h')
+                sample.waveform.frombytes(raw_bytes)
+                sample.is_16bit = True
+
         inst.samples.append(sample)
         if not inst.sample_map:
             inst.sample_map = [0] * 96

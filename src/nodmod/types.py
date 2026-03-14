@@ -293,11 +293,34 @@ class Instrument:
             return []
         return [v + 1 for v in self.sample_map]
 
-    def set_sample_for_note(self, note: int, sample_idx: int):
+    @staticmethod
+    def _note_str_to_idx(note: str | int) -> int:
+        if isinstance(note, int):
+            return note
+        s = note.strip().upper()
+        if len(s) != 3 or s[1] not in ('-', '#'):
+            raise ValueError(f"Invalid note format {note}")
+        pitch = s[:2]
+        try:
+            octave = int(s[2])
+        except ValueError as exc:
+            raise ValueError(f"Invalid note octave {note}") from exc
+        period_seq = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-']
+        if pitch not in period_seq:
+            raise ValueError(f"Invalid note name {note}")
+        note_idx = period_seq.index(pitch)
+        idx = (octave - 1) * 12 + note_idx
+        return idx
+
+    def clear_sample_map(self) -> None:
+        self.sample_map = []
+
+    def set_sample_for_note(self, note: str | int, sample_idx: int):
         """
         Sets the sample for a given note (0-95) using 1-based sample indices.
         """
-        if note < 0 or note >= 96:
+        note_idx = self._note_str_to_idx(note)
+        if note_idx < 0 or note_idx >= 96:
             raise IndexError(f"Invalid note index {note}")
         n_samples = len(self.samples)
         if n_samples == 0:
@@ -306,7 +329,7 @@ class Instrument:
             raise ValueError(f"Invalid sample index {sample_idx} for instrument with {n_samples} samples")
         if not self.sample_map or len(self.sample_map) != 96:
             self.sample_map = [0] * 96
-        self.sample_map[note] = sample_idx - 1
+        self.sample_map[note_idx] = sample_idx - 1
 
     def _normalize_envelope_points(self, points: list[EnvelopePoint | tuple[int, int]]) -> list[EnvelopePoint]:
         norm: list[EnvelopePoint] = []
