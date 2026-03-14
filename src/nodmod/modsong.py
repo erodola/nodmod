@@ -109,7 +109,7 @@ class MODSong(Song):
             magic_string = _decode_header_bytes(data[1080:1080 + 4])
             accepted_magic = {"M.K.", "M!K!", "FLT4"}  # 4-channel variants
             if magic_string not in accepted_magic:  # non-standard mod file
-                raise NotImplementedError(f"Unsupported module format {magic_string}.")
+                raise NotImplementedError(f"Unsupported MOD format {magic_string}. Supported: M.K., M!K!, FLT4.")
 
             # ----------------------------
             # Load pattern preamble data
@@ -190,7 +190,7 @@ class MODSong(Song):
             actual_size = len(data[1084:])
             if predicted_size != actual_size:
                 n_extra_patterns = int((actual_size - predicted_size) / (MODSong.ROWS * MODSong.CHANNELS * 4))
-                raise NotImplementedError(f"The module has {n_extra_patterns} unexpected extra patterns.")
+                raise NotImplementedError(f"Unexpected extra patterns: {n_extra_patterns} (non-standard MOD).")
 
             # ----------------------------
             # Load pattern data
@@ -270,7 +270,7 @@ class MODSong(Song):
             print(f'Saving to {fname}... ', end='', flush=True)
 
         if len(self.pattern_seq) == 0 or len(self.patterns) > 128:
-            raise OverflowError(f"Can't save a MOD file with {len(self.pattern_seq)} patterns.")
+            raise OverflowError(f"Too many patterns ({len(self.pattern_seq)}). MOD supports up to 128.")
 
         data = bytearray()
 
@@ -314,7 +314,7 @@ class MODSong(Song):
             if len(waveform) % 2 != 0:
                 waveform.append(0x0)
             if int(len(waveform) / 2) > 131072:
-                raise ValueError(f"Sample length {int(len(waveform) / 2)} exceeds the MOD maximum of 128K.")
+                raise ValueError(f"Sample length {int(len(waveform) / 2)} words exceeds MOD max 65536 words (128 KB).")
             data += int(len(waveform) / 2).to_bytes(2, byteorder='big', signed=False)
 
             data += ((smp.finetune << 4) >> 4).to_bytes(1)
@@ -347,10 +347,10 @@ class MODSong(Song):
             pat = self.patterns[p]
 
             if len(pat.data) != MODSong.CHANNELS:
-                raise NotImplementedError(f"Can't save a MOD file with {len(pat.data)} channels.")
+                raise NotImplementedError(f"Cannot save MOD with {len(pat.data)} channels (expected 4).")
 
             if len(pat.data[0]) != MODSong.ROWS:
-                raise NotImplementedError(f"Can't save a MOD file with {len(pat.data[0])} rows.")
+                raise NotImplementedError(f"Cannot save MOD with {len(pat.data[0])} rows (expected 64).")
 
             for r in range(MODSong.ROWS):
                 for c in range(MODSong.CHANNELS):
@@ -596,7 +596,7 @@ class MODSong(Song):
                     sample_idx = i + 1
                     break
             if sample_idx == 0:
-                raise ValueError(f"Couldn't find an empty slot for the new sample.")
+                raise ValueError("No empty sample slots available (1-31 are full).")
 
         self.samples[sample_idx - 1] = Sample()  # reset all attributes
 
@@ -633,7 +633,7 @@ class MODSong(Song):
                     sample_idx = i + 1
                     break
             if sample_idx == 0:
-                raise ValueError(f"Couldn't find an empty slot for the new sample.")
+                raise ValueError("No empty sample slots available (1-31 are full).")
 
         self.samples[sample_idx - 1] = Sample()  # reset all attributes
 
@@ -703,7 +703,7 @@ class MODSong(Song):
         :return: The sample duration in seconds.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
 
         smp = self.samples[sample_idx - 1]
 
@@ -729,7 +729,7 @@ class MODSong(Song):
         :return: None.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
 
         smp = self.samples[sample_idx - 1]
 
@@ -759,7 +759,7 @@ class MODSong(Song):
         :return: The sample object.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
 
         return self.samples[sample_idx - 1]
 
@@ -774,7 +774,7 @@ class MODSong(Song):
         Replaces the sample at the given index.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
         self.samples[sample_idx - 1] = sample
 
     def copy_sample_from(self, src: 'MODSong', src_sample_idx: int, dst_sample_idx: int = 0) -> int:
@@ -827,7 +827,7 @@ class MODSong(Song):
         :return: None.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
 
         self.samples[sample_idx] = Sample()
 
@@ -840,7 +840,7 @@ class MODSong(Song):
         :return: None.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
 
         for s in range(MODSong.SAMPLES):
             if s + 1 != sample_idx:
@@ -861,7 +861,7 @@ class MODSong(Song):
         :return: None.
         """
         if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         p = self.pattern_seq[pattern]
         for r in range(MODSong.ROWS):
@@ -893,7 +893,7 @@ class MODSong(Song):
         :return: The effective number of rows that gets played in the pattern.
         """
         if pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern}")
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
         loop_start_row = 0  # used by E6x effect
 
@@ -946,7 +946,7 @@ class MODSong(Song):
         :return: None.
         """
         if channel <= 0 or channel > MODSong.CHANNELS:
-            raise IndexError(f"Invalid channel index {channel}")
+            raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
@@ -962,7 +962,7 @@ class MODSong(Song):
         :return: None.
         """
         if channel <= 0 or channel > MODSong.CHANNELS:
-            raise IndexError(f"Invalid channel index {channel}")
+            raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
@@ -1037,13 +1037,13 @@ class MODSong(Song):
         :return: The note object.
         """
         if row < 0 or row >= MODSong.ROWS:
-            raise IndexError(f"Invalid row index {row}")
+            raise IndexError(f"Invalid row index {row} (expected 0-63).")
 
         if channel < 0 or channel >= MODSong.CHANNELS:
-            raise IndexError(f"Invalid channel index {channel}")
+            raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
         if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern_in_song}")
+            raise IndexError(f"Invalid pattern index in sequence {pattern_in_song} (expected 0-{len(self.pattern_seq)-1}).")
 
         return self.patterns[self.pattern_seq[pattern_in_song]].data[channel][row]
     
@@ -1064,7 +1064,7 @@ class MODSong(Song):
         :return: None.
         """
         if bpm < 32 or bpm > 255:
-            raise ValueError(f"Invalid tempo {bpm}")
+            raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
 
         self.write_effect(pattern, channel, row, f"F{bpm:02X}")
         
@@ -1079,7 +1079,7 @@ class MODSong(Song):
         :return: None.
         """
         if ticks < 1 or ticks > 31:
-            raise ValueError(f"Invalid ticks per row {ticks}")
+            raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
 
         self.write_effect(pattern, channel, row, f"F{ticks:02X}")
 
@@ -1095,7 +1095,7 @@ class MODSong(Song):
         :return: None.
         """
         if slide < -255 or slide > 255:
-            raise ValueError(f"Invalid portamento slide {slide}")
+            raise ValueError(f"Invalid portamento slide {slide} (expected 0-255).")
 
         if slide > 0:
             self.write_effect(pattern, channel, row, f"1{slide:02X}")
@@ -1116,7 +1116,7 @@ class MODSong(Song):
         :return: None.
         """
         if speed < 0 or speed > 255:
-            raise ValueError(f"Invalid tone portamento speed {speed}")
+            raise ValueError(f"Invalid tone portamento speed {speed} (expected 0-255).")
 
         self.write_effect(pattern, channel, row, f"3{speed:02X}")
 
@@ -1131,7 +1131,7 @@ class MODSong(Song):
         :return: None.
         """
         if slide < -15 or slide > 15:
-            raise ValueError(f"Invalid tone portamento slide {slide}")
+            raise ValueError(f"Invalid tone portamento slide {slide} (expected 0-255).")
         
         efx = 0
         if slide > 0:
@@ -1152,7 +1152,7 @@ class MODSong(Song):
         :return: None.
         """
         if volume < 0 or volume > 64:
-            raise ValueError(f"Invalid volume {volume}")
+            raise ValueError(f"Invalid volume {volume} (expected 0-64).")
 
         self.write_effect(pattern, channel, row, f"C{volume:02X}")
 
@@ -1167,7 +1167,7 @@ class MODSong(Song):
         :return: None.
         """
         if slide < -15 or slide > 15:
-            raise ValueError(f"Invalid volume slide {slide}")
+            raise ValueError(f"Invalid volume slide {slide} (expected 0-255).")
         
         efx = 0
         if slide > 0:
@@ -1190,10 +1190,10 @@ class MODSong(Song):
         :return: None.
         """
         if speed < 0 or speed > 15:
-            raise ValueError(f"Invalid vibrato speed {speed}")
+            raise ValueError(f"Invalid vibrato speed {speed} (expected 0-15).")
         
         if depth < 0 or depth > 15:
-            raise ValueError(f"Invalid vibrato depth {depth}")
+            raise ValueError(f"Invalid vibrato depth {depth} (expected 0-15).")
         
         efx = 16 * speed + depth
         
@@ -1210,7 +1210,7 @@ class MODSong(Song):
         :return: None.
         """
         if slide < -15 or slide > 15:
-            raise ValueError(f"Invalid vibrato slide {slide}")
+            raise ValueError(f"Invalid vibrato slide {slide} (expected 0-255).")
         
         efx = 0
         if slide > 0:
@@ -1233,10 +1233,10 @@ class MODSong(Song):
         :return: None.
         """
         if speed < 0 or speed > 15:
-            raise ValueError(f"Invalid tremolo speed {speed}")
+            raise ValueError(f"Invalid tremolo speed {speed} (expected 0-15).")
         
         if depth < 0 or depth > 15:
-            raise ValueError(f"Invalid tremolo depth {depth}")
+            raise ValueError(f"Invalid tremolo depth {depth} (expected 0-15).")
         
         efx = 16 * speed + depth
         

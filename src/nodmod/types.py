@@ -273,7 +273,7 @@ class Instrument:
         Each value must be in [1, n_samples].
         """
         if len(map96) != 96:
-            raise ValueError(f"Sample map must have 96 entries, got {len(map96)}")
+            raise ValueError(f"Sample map must have 96 entries (got {len(map96)}).")
         n_samples = len(self.samples)
         if n_samples == 0:
             # No samples: keep an empty map
@@ -281,7 +281,7 @@ class Instrument:
             return
         for v in map96:
             if v < 1 or v > n_samples:
-                raise ValueError(f"Invalid sample index {v} for instrument with {n_samples} samples")
+                raise ValueError(f"Invalid sample index {v} (instrument has {n_samples} samples).")
         # Store as 0-based indices internally
         self.sample_map = [v - 1 for v in map96]
 
@@ -324,7 +324,7 @@ class Instrument:
             raise IndexError(f"Invalid note index {note} (expected 0-95).")
         n_samples = len(self.samples)
         if n_samples == 0:
-            raise ValueError("Instrument has no samples")
+            raise ValueError("Instrument has no samples.")
         if sample_idx < 1 or sample_idx > n_samples:
             raise ValueError(f"Invalid sample index {sample_idx} for instrument with {n_samples} samples")
         if not self.sample_map or len(self.sample_map) != 96:
