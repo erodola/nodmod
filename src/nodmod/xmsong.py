@@ -1140,7 +1140,189 @@ class XMSong(Song):
         :return: A list where each element is a list corresponding to pattern in the sequence.
                  Within each list, each row is a triple (timestamp [s], speed, bpm).
         """
-        pass  # TODO
+
+        bpm = self.default_tempo
+        speed = self.default_speed  # ticks per row
+
+        d = Song.get_tick_duration(bpm)
+
+        timestamps = []
+        speeds = []
+        bpms = []
+
+        jump_to_position = -1  # modified by Dxx effect
+        jump_to_pattern = -1  # modified by Bxx effect (song order index)
+        stop_song = False
+        self_jump_count = 0
+        self_jump_limit = 5
+
+        start_row = 0
+
+        # XM quirk: loop start positions are not reset across patterns
+        loop_start_row = [0] * self.n_channels
+
+        seq_idx = 0
+        while seq_idx < len(self.pattern_seq):
+
+            p = self.pattern_seq[seq_idx]
+            if p < 0 or p >= len(self.patterns):
+                seq_idx += 1
+                continue
+            pat = self.patterns[p]
+            n_rows = pat.n_rows
+            n_channels = pat.n_channels
+
+            if n_channels != len(loop_start_row):
+                loop_start_row = [0] * n_channels
+
+            pattern_timestamps = []
+            pattern_speeds = []
+            pattern_bpms = []
+
+            loop_count = [0] * n_channels
+
+            r = start_row
+            while r < n_rows:
+
+                if jump_to_position != -1:
+                    jump_to_position = -1
+                    start_row = 0
+
+                row_delay = 0
+                loop_jump_row = None
+                pending_jump_row = None
+                pending_jump_pattern = None
+                saw_self_jump = False
+
+                for c in range(n_channels):
+
+                    efx = pat.data[c][r].effect
+                    if efx != "":
+
+                        if efx[0] == "F":  # set speed/tempo (XM)
+
+                            if len(efx) < 2:
+                                continue
+                            try:
+                                v = int(efx[1:], 16)
+                            except ValueError:
+                                continue
+                            if v <= 31:
+                                if v != 0:
+                                    speed = v
+                            else:
+                                bpm = v
+
+                            d = Song.get_tick_duration(bpm)
+
+                        elif efx[0] == "D":  # pattern break (BCD)
+                            if len(self.pattern_seq) <= 1:
+                                continue
+                            if len(efx) == 1:
+                                pending_jump_row = 0
+                                continue
+                            param = efx[1:]
+                            if len(param) == 1:
+                                param = f"0{param}"
+                            try:
+                                hi = int(param[0], 16)
+                                lo = int(param[1], 16)
+                            except ValueError:
+                                continue
+                            pending_jump_row = hi * 10 + lo
+
+                        elif efx[0] == "B":  # pattern jump
+                            param = efx[1:] if len(efx) > 1 else "00"
+                            try:
+                                dest = int(param, 16)
+                            except ValueError:
+                                continue
+                            if dest < len(self.pattern_seq):
+                                if dest > seq_idx:
+                                    pending_jump_pattern = dest
+                                elif dest == seq_idx:
+                                    saw_self_jump = True
+                                else:
+                                    stop_song = True
+
+                        elif efx[0] == "E" and len(efx) >= 3:
+                            cmd = efx[1].upper()
+                            try:
+                                val = int(efx[2], 16)
+                            except ValueError:
+                                continue
+                            if cmd == "6":  # pattern loop (per-channel)
+                                if val == 0:
+                                    old_loop_start = loop_start_row[c]
+                                    loop_start_row[c] = r
+                                    if loop_count[c] == -1 and r > old_loop_start:
+                                        loop_count[c] = 0
+                                else:
+                                    if loop_count[c] == 0:
+                                        loop_count[c] = val
+                                    if loop_count[c] > 0 and loop_start_row[c] < r:
+                                        loop_count[c] -= 1
+                                        loop_jump_row = loop_start_row[c]
+                                        if loop_count[c] == 0:
+                                            loop_count[c] = -1
+                            elif cmd == "E":  # pattern delay
+                                row_delay = val
+
+                row_duration = d * speed
+                if row_delay > 0:
+                    row_duration *= (row_delay + 1)
+                pattern_timestamps.append(row_duration)
+                pattern_speeds.append(speed)
+                pattern_bpms.append(bpm)
+
+                if stop_song:
+                    break
+
+                if saw_self_jump and pending_jump_row is not None and self_jump_count < self_jump_limit:
+                    pending_jump_pattern = seq_idx
+                    self_jump_count += 1
+
+                if loop_jump_row is not None:
+                    r = loop_jump_row
+                    continue
+
+                if pending_jump_pattern is not None:
+                    jump_to_pattern = pending_jump_pattern
+                    if pending_jump_row is not None:
+                        start_row = pending_jump_row
+                    else:
+                        start_row = 0
+                    break
+
+                if pending_jump_row is not None:
+                    jump_to_position = pending_jump_row
+                    start_row = jump_to_position
+                    break
+
+                r += 1
+
+            timestamps.append(pattern_timestamps)
+            speeds.append(pattern_speeds)
+            bpms.append(pattern_bpms)
+
+            if stop_song:
+                break
+
+            if jump_to_pattern != -1:
+                seq_idx = jump_to_pattern
+                jump_to_pattern = -1
+                start_row = 0
+                continue
+
+            seq_idx += 1
+
+        cum = 0
+        for p in range(len(timestamps)):
+            for r in range(len(timestamps[p])):
+                cum += timestamps[p][r]
+                timestamps[p][r] = (cum, speeds[p][r], bpms[p][r])
+
+        return timestamps
 
     '''
     -------------------------------------
@@ -1227,6 +1409,42 @@ class XMSong(Song):
             raise IndexError(f"Invalid channel index {channel}")
 
         return pat.data[channel][row]
+
+    '''
+    -------------------------------------
+    EFFECTS
+    -------------------------------------
+    '''
+
+    def set_bpm(self, pattern: int, channel: int, row: int, bpm: int):
+        """
+        Sets the bpm (tempo) at the given pattern, row and channel, overwriting whatever other effect is there.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param bpm: The bpm value to set, from 32 to 255.
+        :return: None.
+        """
+        if bpm < 32 or bpm > 255:
+            raise ValueError(f"Invalid tempo {bpm}")
+
+        self.write_effect(pattern, channel, row, f"F{bpm:02X}")
+
+    def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
+        """
+        Sets the ticks per row (speed) at the given pattern, row and channel, overwriting whatever other effect is there.
+
+        :param pattern: The pattern index (in the sequence) to write to.
+        :param channel: The channel index to write to, 0-based.
+        :param row: The row index to write to, 0-based.
+        :param ticks: The speed value to set, from 1 to 31.
+        :return: None.
+        """
+        if ticks < 1 or ticks > 31:
+            raise ValueError(f"Invalid ticks per row {ticks}")
+
+        self.write_effect(pattern, channel, row, f"F{ticks:02X}")
 
     '''
     -------------------------------------
@@ -1474,7 +1692,7 @@ class XMSong(Song):
 
         return n
 
-    def get_effective_row_count(self, pattern: int) -> int:
+    def get_effective_row_count(self, pattern: int, include_loops: bool = True) -> int:
         """
         Returns the effective number of rows that get played in a pattern.
         Accounts for position jumps, loops, and breaks.
@@ -1482,9 +1700,49 @@ class XMSong(Song):
         TODO: do a separate version for the entire song
 
         :param pattern: The pattern index (within the song sequence).
+        :param include_loops: True to also count the rows that get played in loops.
         :return: The effective number of rows that gets played in the pattern.
         """
-        pass  # TODO
+        if pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern}")
+
+        loop_start_row = 0  # used by E6x effect
+
+        data = copy.deepcopy(self.patterns[self.pattern_seq[pattern]].data)
+        n_channels = len(data)
+        n_rows = len(data[0]) if data else 0
+
+        unrolled_data = [[] for _ in range(n_channels)]
+
+        for r in range(n_rows):
+
+            interrupt = False  # if true, the pattern is cut short by Bxx or Dxx effects
+
+            for c in range(n_channels):
+
+                unrolled_data[c].append(data[c][r])
+
+                efx = data[c][r].effect
+                if efx != "":
+
+                    if efx[0] == "B" or efx[0] == "D":
+                        interrupt = True
+
+                    if include_loops and efx[:2] == "E6":
+
+                        if int(efx[2], 16) == 0:  # E60 means loop start
+                            loop_start_row = r
+
+                        loop_end_row = r
+                        loop_count = int(efx[2], 16)
+
+                        for _ in range(loop_count):
+                            unrolled_data[c] += unrolled_data[c][loop_start_row:loop_end_row + 1]
+
+            if interrupt:
+                break
+
+        return max([len(unrolled_data[c]) for c in range(n_channels)]) if n_channels > 0 else 0
 
     def get_pattern_duration(self, pattern: int) -> float:
         """

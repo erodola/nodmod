@@ -190,15 +190,6 @@ class Song(ABC):
         """
         pass
 
-    @abstractmethod
-    def get_pattern_duration(self, pattern: int) -> float:
-        """
-        Returns the duration of a pattern in seconds.
-
-        :param pattern: The pattern index (within the song sequence).
-        :return: The pattern duration in seconds.
-        """
-        pass
 
     def remove_patterns_after(self, pattern: int):
         """
