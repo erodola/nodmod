@@ -61,6 +61,38 @@ class Song(ABC):
         return 2.5 / bpm  # See the 'Classic' tempo mode at https://wiki.openmpt.org/Manual:_Song_Properties
 
     @staticmethod
+    @staticmethod
+    def note_to_index(note: str | int) -> int:
+        """
+        Converts a note string like C-4 or F#3 to a 0-95 index.
+        """
+        if isinstance(note, int):
+            return note
+        s = note.strip().upper()
+        if len(s) != 3 or s[1] not in ("-", "#"):
+            raise ValueError(f"Invalid note format {note}. Expected like C-4 or F#3.")
+        pitch = s[:2]
+        try:
+            octave = int(s[2])
+        except ValueError as exc:
+            raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
+        if pitch not in Song.PERIOD_SEQ:
+            raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
+        note_idx = Song.PERIOD_SEQ.index(pitch)
+        return (octave - 1) * 12 + note_idx
+
+    @staticmethod
+    def index_to_note(idx: int) -> str:
+        """
+        Converts a 0-95 note index to a note string like C-4.
+        """
+        if idx < 0 or idx >= 96:
+            raise ValueError(f"Invalid note index {idx} (expected 0-95).")
+        octave = idx // 12 + 1
+        pitch = Song.PERIOD_SEQ[idx % 12]
+        return f"{pitch}{octave}"
+
+
     def artist_songname_from_filename(filename: str):
         filename = os.path.basename(filename)
         parts = filename.split(' - ')
