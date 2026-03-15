@@ -80,7 +80,7 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def load_from_file(self, fname: str, verbose: bool = True):
+    def load(self, fname: str, verbose: bool = True):
         """
         Loads a song from a standard MOD file.
 
@@ -233,7 +233,7 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_as_ascii(self, fname: str, verbose: bool = True):
+    def save_ascii(self, fname: str, verbose: bool = True):
         """
         Writes the song as readable text with ASCII encoding.
 
@@ -257,7 +257,7 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_to_file(self, fname: str, verbose: bool = True):
+    def save(self, fname: str, verbose: bool = True):
         """
         Saves the song as a standard MOD file.
 
@@ -394,7 +394,6 @@ class MODSong(Song):
             print('done.')
 
     # Alias for backwards compatibility
-    save_as_mod = save_to_file
     
     '''
     -------------------------------------
@@ -692,6 +691,39 @@ class MODSong(Song):
 
         return effective_sample_rate
     
+    def set_sample_name(self, sample_idx: int, name: str) -> None:
+        smp = self.get_sample(sample_idx)
+        smp.name = name
+
+    def set_sample_volume(self, sample_idx: int, volume: int) -> None:
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid volume {volume} (expected 0-64).")
+        smp = self.get_sample(sample_idx)
+        smp.volume = volume
+
+    def set_sample_finetune(self, sample_idx: int, finetune: int) -> None:
+        if finetune < 0 or finetune > 15:
+            raise ValueError(f"Invalid finetune {finetune} (expected 0-15).")
+        smp = self.get_sample(sample_idx)
+        smp.finetune = finetune
+
+    def set_sample_loop(self, sample_idx: int, start: int, length: int) -> None:
+        smp = self.get_sample(sample_idx)
+        smp.repeat_point = max(0, start)
+        smp.repeat_len = max(0, length)
+
+
+    def validate_sample_loop(self, sample_idx: int) -> None:
+        smp = self.get_sample(sample_idx)
+        n = len(smp.waveform)
+        if smp.repeat_len <= 1:
+            return
+        if smp.repeat_point < 0:
+            raise ValueError("Loop start cannot be negative.")
+        if smp.repeat_point + smp.repeat_len > n:
+            raise ValueError(f"Loop end {smp.repeat_point + smp.repeat_len} exceeds sample length {n}.")
+
+
     def get_sample_duration(self, sample_idx: int, period: str = "C-5") -> float:
         """
         Returns the duration of the sample at the given index in seconds.
@@ -852,6 +884,26 @@ class MODSong(Song):
     -------------------------------------
     '''
 
+    def resize_pattern(self, pattern: int, n_rows: int) -> None:
+        """
+        MOD patterns have a fixed length of 64 rows; resizing is not supported.
+        """
+        if n_rows != MODSong.ROWS:
+            raise ValueError(f"MOD patterns have fixed 64 rows (got {n_rows}).")
+
+
+    def add_to_sequence(self, pattern_idx: int, pos: int | None = None) -> None:
+        if len(self.pattern_seq) + 1 > 128:
+            raise ValueError(f"Pattern sequence too long ({len(self.pattern_seq) + 1}). MOD supports up to 128.")
+        super().add_to_sequence(pattern_idx, pos)
+
+
+    def set_sequence(self, seq: list[int]) -> None:
+        if len(seq) > 128:
+            raise ValueError(f"Pattern sequence too long ({len(seq)}). MOD supports up to 128.")
+        super().set_sequence(seq)
+
+
     def clear_pattern(self, pattern: int):
         """
         Clears completely a specified pattern.
@@ -937,43 +989,51 @@ class MODSong(Song):
     -------------------------------------
     '''
 
+    def add_channel(self, count: int = 1) -> None:
+        if count <= 0:
+            raise ValueError(f"Invalid channel count {count} (expected >=1).")
+        raise NotImplementedError("MOD format has fixed 4 channels; cannot add channels.")
+
+    def remove_channel(self, channel: int) -> None:
+        raise NotImplementedError("MOD format has fixed 4 channels; cannot remove channels.")
+
     def clear_channel(self, channel: int):
         """
         Clears completely a specified channel in the entire song.
         WARNING: Don't use this as a way to mute channels, as it also removes global effects.
 
-        :param channel: The channel index to mute, 1 to 4.
+        :param channel: The channel index to mute, 0 to 3.
         :return: None.
         """
-        if channel <= 0 or channel > MODSong.CHANNELS:
+        if channel < 0 or channel >= MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
-                self.patterns[p].data[channel - 1][r] = Note()
+                self.patterns[p].data[channel][r] = Note()
 
     def mute_channel(self, channel: int):
         """
         Mutes a specified channel in the entire song while preserving global effects.
         This clears notes, instruments, and channel-specific effects but keeps global effects
-        like speed/BPM changes (Fxx), pattern breaks (Bxx), and position jumps (Dxx).
+        like speed/BPM changes (Fxx), pattern breaks (Bxx), position jumps (Dxx), volume set (Cxx), and extended effects (E**).
 
-        :param channel: The channel index to mute, 1 to 4.
+        :param channel: The channel index to mute, 0 to 3.
         :return: None.
         """
-        if channel <= 0 or channel > MODSong.CHANNELS:
+        if channel < 0 or channel >= MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
-                note = self.patterns[p].data[channel - 1][r]
+                note = self.patterns[p].data[channel][r]
                 
                 # Check if this note has a global effect that should be preserved
                 global_effect = ""
                 if note.effect != "":
                     effect_type = note.effect[0]
                     # Preserve global effects: F (speed/BPM), B (pattern break), D (position jump)
-                    if effect_type in ['F', 'B', 'D']:
+                    if effect_type in ['F', 'B', 'D', 'C', 'E']:
                         global_effect = note.effect
                 
                 # Create a new empty note
@@ -982,7 +1042,7 @@ class MODSong(Song):
                 if global_effect:
                     new_note.effect = global_effect
                 
-                self.patterns[p].data[channel - 1][r] = new_note
+                self.patterns[p].data[channel][r] = new_note
 
     '''
     -------------------------------------
@@ -1066,7 +1126,7 @@ class MODSong(Song):
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
 
-        self.write_effect(pattern, channel, row, f"F{bpm:02X}")
+        self.set_effect(pattern, channel, row, f"F{bpm:02X}")
         
     def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
         """
@@ -1081,7 +1141,7 @@ class MODSong(Song):
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
 
-        self.write_effect(pattern, channel, row, f"F{ticks:02X}")
+        self.set_effect(pattern, channel, row, f"F{ticks:02X}")
 
     def set_portamento(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1098,9 +1158,9 @@ class MODSong(Song):
             raise ValueError(f"Invalid portamento slide {slide} (expected 0-255).")
 
         if slide > 0:
-            self.write_effect(pattern, channel, row, f"1{slide:02X}")
+            self.set_effect(pattern, channel, row, f"1{slide:02X}")
         elif slide < 0:
-            self.write_effect(pattern, channel, row, f"2{slide:02X}")
+            self.set_effect(pattern, channel, row, f"2{slide:02X}")
 
     def set_tone_portamento(self, pattern: int, channel: int, row: int, speed: int):
         """
@@ -1118,7 +1178,7 @@ class MODSong(Song):
         if speed < 0 or speed > 255:
             raise ValueError(f"Invalid tone portamento speed {speed} (expected 0-255).")
 
-        self.write_effect(pattern, channel, row, f"3{speed:02X}")
+        self.set_effect(pattern, channel, row, f"3{speed:02X}")
 
     def set_tone_portamento_slide(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1139,7 +1199,7 @@ class MODSong(Song):
         elif slide < 0:
             efx = -slide
         
-        self.write_effect(pattern, channel, row, f"5{efx:02X}")
+        self.set_effect(pattern, channel, row, f"5{efx:02X}")
         
     def set_volume(self, pattern: int, channel: int, row: int, volume: int):
         """
@@ -1154,7 +1214,7 @@ class MODSong(Song):
         if volume < 0 or volume > 64:
             raise ValueError(f"Invalid volume {volume} (expected 0-64).")
 
-        self.write_effect(pattern, channel, row, f"C{volume:02X}")
+        self.set_effect(pattern, channel, row, f"C{volume:02X}")
 
     def set_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1175,7 +1235,7 @@ class MODSong(Song):
         elif slide < 0:
             efx = -slide
         
-        self.write_effect(pattern, channel, row, f"A{efx:02X}")
+        self.set_effect(pattern, channel, row, f"A{efx:02X}")
 
     def set_vibrato(self, pattern: int, channel: int, row: int, speed: int, depth: int):
         """
@@ -1197,7 +1257,7 @@ class MODSong(Song):
         
         efx = 16 * speed + depth
         
-        self.write_effect(pattern, channel, row, f"4{efx:02X}")
+        self.set_effect(pattern, channel, row, f"4{efx:02X}")
 
     def set_vibrato_slide(self, pattern: int, channel: int, row: int, slide: int):
         """
@@ -1218,7 +1278,7 @@ class MODSong(Song):
         elif slide < 0:
             efx = -slide
         
-        self.write_effect(pattern, channel, row, f"6{efx:02X}")
+        self.set_effect(pattern, channel, row, f"6{efx:02X}")
 
     def set_tremolo(self, pattern: int, channel: int, row: int, speed: int, depth: int):
         """
@@ -1240,4 +1300,4 @@ class MODSong(Song):
         
         efx = 16 * speed + depth
         
-        self.write_effect(pattern, channel, row, f"7{efx:02X}")
+        self.set_effect(pattern, channel, row, f"7{efx:02X}")

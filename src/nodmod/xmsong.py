@@ -7,6 +7,7 @@ import pydub  # needed for loading WAV samples
 
 from nodmod import Song
 from nodmod import XMSample
+from nodmod import Sample
 from nodmod import Instrument
 from nodmod import EnvelopePoint
 from nodmod import Pattern
@@ -96,7 +97,7 @@ class XMSong(Song):
     -------------------------------------
     '''
 
-    def save_as_ascii(self, fname: str, verbose: bool = True):
+    def save_ascii(self, fname: str, verbose: bool = True):
         """
         Writes the song as readable text with ASCII encoding.
         
@@ -129,7 +130,7 @@ class XMSong(Song):
         if verbose:
             print('done.')
 
-    def save_to_file(self, fname: str, verbose: bool = True):
+    def save(self, fname: str, verbose: bool = True):
         """
         Saves the song as a standard XM file.
         
@@ -531,7 +532,7 @@ class XMSong(Song):
         if verbose:
             print('done.')
 
-    def load_from_file(self, fname: str, verbose: bool = True):
+    def load(self, fname: str, verbose: bool = True):
         """
         Loads a song from a standard XM file.
 
@@ -1348,7 +1349,7 @@ class XMSong(Song):
     -------------------------------------
     '''
 
-    def write_note(
+    def set_note(
         self,
         pattern: int,
         channel: int,
@@ -1406,6 +1407,56 @@ class XMSong(Song):
 
         pat.data[channel][row] = new_note
 
+    def add_channel(self, count: int = 1) -> None:
+        if count <= 0:
+            raise ValueError(f"Invalid channel count {count} (expected >=1).")
+        if self.n_channels + count > 32:
+            raise ValueError(f"Too many channels: {self.n_channels + count} (XM supports 1-32).")
+        for pat in self.patterns:
+            for _ in range(count):
+                pat.data.append([XMNote() for _ in range(pat.n_rows)])
+            pat.n_channels += count
+        self.n_channels += count
+
+    def remove_channel(self, channel: int) -> None:
+        if self.n_channels <= 1:
+            raise ValueError("Cannot remove last channel (XM requires at least 1).")
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+        for pat in self.patterns:
+            pat.data.pop(channel)
+            pat.n_channels -= 1
+        self.n_channels -= 1
+
+    def mute_channel(self, channel: int) -> None:
+        """
+        Mutes a specified channel in the entire song while preserving global effects.
+        This clears notes, instruments, and channel-specific effects but keeps global effects
+        like speed/BPM changes (Fxx), pattern breaks (Bxx), position jumps (Dxx), and extended effects (E**).
+        """
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+
+        for pat in self.patterns:
+            for r in range(pat.n_rows):
+                note = pat.data[channel][r]
+                global_effect = ""
+                if note.effect:
+                    effect_type = note.effect[0]
+                    if effect_type in ['F', 'B', 'D', 'E']:
+                        global_effect = note.effect
+                new_note = XMNote()
+                if global_effect:
+                    new_note.effect = global_effect
+                pat.data[channel][r] = new_note
+
+    def clear_channel(self, channel: int) -> None:
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+        for pat in self.patterns:
+            for r in range(pat.n_rows):
+                pat.data[channel][r] = XMNote()
+
     def get_note(self, pattern_in_song: int, row: int, channel: int) -> XMNote:
         """
         Returns the XMNote object at the given pattern, row and channel.
@@ -1447,7 +1498,7 @@ class XMSong(Song):
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
 
-        self.write_effect(pattern, channel, row, f"F{bpm:02X}")
+        self.set_effect(pattern, channel, row, f"F{bpm:02X}")
 
     def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
         """
@@ -1462,7 +1513,7 @@ class XMSong(Song):
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
 
-        self.write_effect(pattern, channel, row, f"F{ticks:02X}")
+        self.set_effect(pattern, channel, row, f"F{ticks:02X}")
 
     '''
     -------------------------------------
@@ -1551,6 +1602,56 @@ class XMSong(Song):
     def duplicate_sample(self, inst_idx: int, sample_idx: int) -> int:
         return self.copy_sample_from(self, inst_idx, sample_idx, inst_idx)
 
+    def set_sample_name(self, inst_idx: int, sample_idx: int, name: str) -> None:
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.name = name
+
+    def set_sample_volume(self, inst_idx: int, sample_idx: int, volume: int) -> None:
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid volume {volume} (expected 0-64).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.volume = volume
+
+    def set_sample_finetune(self, inst_idx: int, sample_idx: int, finetune: int) -> None:
+        if finetune < -128 or finetune > 127:
+            raise ValueError(f"Invalid finetune {finetune} (expected -128 to 127).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.finetune = finetune
+
+    def set_sample_panning(self, inst_idx: int, sample_idx: int, panning: int) -> None:
+        if panning < 0 or panning > 255:
+            raise ValueError(f"Invalid panning {panning} (expected 0-255).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.panning = panning
+
+    def set_sample_relative_note(self, inst_idx: int, sample_idx: int, rel: int) -> None:
+        if rel < -96 or rel > 95:
+            raise ValueError(f"Invalid relative note {rel} (expected -96 to 95).")
+        smp = self.get_sample(inst_idx, sample_idx)
+        smp.relative_note = rel
+
+    def set_instrument_name(self, inst_idx: int, name: str) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.name = name
+
+    def set_instrument_fadeout(self, inst_idx: int, fadeout: int) -> None:
+        if fadeout < 0 or fadeout > 65535:
+            raise ValueError(f"Invalid fadeout {fadeout} (expected 0-65535).")
+        inst = self.get_instrument(inst_idx)
+        inst.volume_fadeout = fadeout
+
+    def set_instrument_vibrato(self, inst_idx: int, vib_type: int, sweep: int, depth: int, rate: int) -> None:
+        if vib_type < 0 or vib_type > 3:
+            raise ValueError(f"Invalid vibrato type {vib_type} (expected 0-3).")
+        if sweep < 0 or sweep > 255 or depth < 0 or depth > 255 or rate < 0 or rate > 255:
+            raise ValueError("Invalid vibrato parameters (expected 0-255).")
+        inst = self.get_instrument(inst_idx)
+        inst.vibrato_type = vib_type
+        inst.vibrato_sweep = sweep
+        inst.vibrato_depth = depth
+        inst.vibrato_rate = rate
+
+
     def set_sample_loop(
         self,
         inst_idx: int,
@@ -1565,6 +1666,25 @@ class XMSong(Song):
         smp.repeat_point = max(0, start)
         smp.repeat_len = max(0, length)
         smp.loop_type = loop_type
+
+    def validate_sample_loop(self, inst_idx: int, sample_idx: int) -> None:
+        smp = self.get_sample(inst_idx, sample_idx)
+        n = len(smp.waveform)
+        if smp.loop_type == Sample.LOOP_NONE:
+            return
+        if smp.repeat_len <= 0:
+            raise ValueError("Loop length must be >0 when loop_type is enabled.")
+        if smp.repeat_point < 0:
+            raise ValueError("Loop start cannot be negative.")
+        if smp.repeat_point + smp.repeat_len > n:
+            raise ValueError(f"Loop end {smp.repeat_point + smp.repeat_len} exceeds sample length {n}.")
+
+    def validate_instrument(self, inst_idx: int) -> None:
+        inst = self.get_instrument(inst_idx)
+        inst.validate_envelopes()
+        for sidx in range(1, len(inst.samples) + 1):
+            self.validate_sample_loop(inst_idx, sidx)
+
 
     def remove_instrument(self, inst_idx: int) -> None:
         """
@@ -1873,6 +1993,40 @@ class XMSong(Song):
     PATTERNS
     -------------------------------------
     '''
+
+    def add_to_sequence(self, pattern_idx: int, pos: int | None = None) -> None:
+        if len(self.pattern_seq) + 1 > 256:
+            raise ValueError(f"Pattern sequence too long ({len(self.pattern_seq) + 1}). XM supports up to 256.")
+        super().add_to_sequence(pattern_idx, pos)
+
+
+    def set_sequence(self, seq: list[int]) -> None:
+        if len(seq) > 256:
+            raise ValueError(f"Pattern sequence too long ({len(seq)}). XM supports up to 256.")
+        super().set_sequence(seq)
+
+
+    def resize_pattern(self, pattern: int, n_rows: int) -> None:
+        """
+        Resizes a pattern in the sequence to the given number of rows (1-256).
+        Truncates or extends with empty notes as needed.
+        """
+        if pattern < 0 or pattern >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if n_rows < 1 or n_rows > 256:
+            raise ValueError(f"Invalid row count {n_rows} (expected 1-256).")
+        p = self.pattern_seq[pattern]
+        pat = self.patterns[p]
+        if n_rows == pat.n_rows:
+            return
+        if n_rows < pat.n_rows:
+            for c in range(pat.n_channels):
+                pat.data[c] = pat.data[c][:n_rows]
+        else:
+            for c in range(pat.n_channels):
+                pat.data[c].extend([XMNote() for _ in range(n_rows - pat.n_rows)])
+        pat.n_rows = n_rows
+
 
     def clear_pattern(self, pattern: int):
         """

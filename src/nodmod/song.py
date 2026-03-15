@@ -61,6 +61,38 @@ class Song(ABC):
         return 2.5 / bpm  # See the 'Classic' tempo mode at https://wiki.openmpt.org/Manual:_Song_Properties
 
     @staticmethod
+    @staticmethod
+    def note_to_index(note: str | int) -> int:
+        """
+        Converts a note string like C-4 or F#3 to a 0-95 index.
+        """
+        if isinstance(note, int):
+            return note
+        s = note.strip().upper()
+        if len(s) != 3 or s[1] not in ("-", "#"):
+            raise ValueError(f"Invalid note format {note}. Expected like C-4 or F#3.")
+        pitch = s[:2]
+        try:
+            octave = int(s[2])
+        except ValueError as exc:
+            raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
+        if pitch not in Song.PERIOD_SEQ:
+            raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
+        note_idx = Song.PERIOD_SEQ.index(pitch)
+        return (octave - 1) * 12 + note_idx
+
+    @staticmethod
+    def index_to_note(idx: int) -> str:
+        """
+        Converts a 0-95 note index to a note string like C-4.
+        """
+        if idx < 0 or idx >= 96:
+            raise ValueError(f"Invalid note index {idx} (expected 0-95).")
+        octave = idx // 12 + 1
+        pitch = Song.PERIOD_SEQ[idx % 12]
+        return f"{pitch}{octave}"
+
+
     def artist_songname_from_filename(filename: str):
         filename = os.path.basename(filename)
         parts = filename.split(' - ')
@@ -84,7 +116,7 @@ class Song(ABC):
         pass
 
     @abstractmethod
-    def save_to_file(self, fname: str, verbose: bool = True):
+    def save(self, fname: str, verbose: bool = True):
         """
         Saves the song to a file in its native format.
 
@@ -93,7 +125,7 @@ class Song(ABC):
         """
         pass
 
-    def render_as_wav(self, fname: str, verbose: bool = True, cleanup: bool = True):
+    def render(self, fname: str, verbose: bool = True, cleanup: bool = True):
         """
         Renders the current song as a WAV file at 44.1kHz.
         
@@ -119,7 +151,7 @@ class Song(ABC):
         if os.path.isfile(temp_file):
             os.remove(temp_file)
 
-        self.save_to_file(temp_file, verbose=False)
+        self.save(temp_file, verbose=False)
 
         if os.path.isfile(temp_wav):
             os.remove(temp_wav)
@@ -191,34 +223,68 @@ class Song(ABC):
         pass
 
 
-    def remove_patterns_after(self, pattern: int):
+    def add_to_sequence(self, pattern_idx: int, pos: int | None = None) -> None:
+        """
+        Inserts an existing pattern index into the sequence at pos (or appends if None).
+        """
+        if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+            raise IndexError(f"Invalid pattern index {pattern_idx} (expected 0-{len(self.patterns)-1}).")
+        if pos is None:
+            self.pattern_seq.append(pattern_idx)
+            return
+        if pos < 0 or pos > len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence position {pos} (expected 0-{len(self.pattern_seq)}).")
+        self.pattern_seq = self.pattern_seq[:pos] + [pattern_idx] + self.pattern_seq[pos:]
+
+
+    def set_sequence(self, seq: list[int]) -> None:
+        """
+        Sets the pattern sequence after validating indices.
+        """
+        if not isinstance(seq, list):
+            raise ValueError("Pattern sequence must be a list of integers.")
+        for idx in seq:
+            if not isinstance(idx, int):
+                raise ValueError(f"Invalid pattern index {idx} (expected int).")
+            if idx < 0 or idx >= len(self.patterns):
+                raise IndexError(f"Invalid pattern index {idx} (expected 0-{len(self.patterns)-1}).")
+        self.pattern_seq = list(seq)
+
+
+    def remove_patterns_after(self, seq_idx: int):
         """
         Removes all patterns (in the pattern sequence) after the specified one.
 
-        :param pattern: The pattern index (within the song sequence) to remove all patterns after.
+        :param seq_idx: The pattern index (within the song sequence) to remove all patterns after.
         :return: None.
         """
 
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.pattern_seq = self.pattern_seq[:pattern + 1]
+        self.pattern_seq = self.pattern_seq[:seq_idx + 1]
 
-    def remove_pattern_from_seq(self, pattern: int) -> None:
+    def remove_pattern(self, pattern: int) -> None:
+        """
+        Removes a specified pattern from the song sequence (alias of remove_pattern).
+        """
+        self.remove_pattern(pattern)
+
+    def remove_pattern(self, seq_idx: int) -> None:
         """
         Removes a specified pattern from the song sequence.
 
         Example:
         - The current sequence is 2, 14, 1, 0, 0, 17
-        - self.remove_pattern_from_seq(3)
+        - self.remove_pattern(3)
         - The new sequence is 2, 14, 1, 0, 17
 
-        :param pattern: The pattern index (within the song sequence) to be removed.
+        :param seq_idx: The pattern index (within the song sequence) to be removed.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.pattern_seq = self.pattern_seq[:pattern] + self.pattern_seq[pattern + 1:]
+        self.pattern_seq = self.pattern_seq[:seq_idx] + self.pattern_seq[seq_idx + 1:]
 
     def remove_all_patterns(self, sequence_only: bool) -> None:
         """
@@ -231,28 +297,44 @@ class Song(ABC):
         if not sequence_only:
             self.patterns = []
 
-    def keep_pattern_from_seq(self, pattern: int) -> None:
+    def keep_pattern(self, seq_idx: int) -> None:
         """
         Removes all the other patterns different from 'pattern'.
 
-        :param pattern: The pattern index (within the song sequence) to be kept.
+        :param seq_idx: The pattern index (within the song sequence) to be kept.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.pattern_seq = [self.pattern_seq[pattern]]
+        self.pattern_seq = [self.pattern_seq[seq_idx]]
 
-    def duplicate_pattern(self, pattern: int) -> int:
+    def insert_pattern(self, seq_idx: int, after: bool = True) -> int:
+        """
+        Inserts a copy of a pattern into the sequence, before or after the given index.
+
+        :param seq_idx: The pattern index (within the song sequence) to copy.
+        :param after: If True, insert after; if False, insert before.
+        :return: The index of the new pattern.
+        """
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[seq_idx]]))
+        new_idx = len(self.patterns) - 1
+        seq_pos = seq_idx + 1 if after else seq_idx
+        self.pattern_seq = self.pattern_seq[:seq_pos] + [new_idx] + self.pattern_seq[seq_pos:]
+        return new_idx
+
+    def duplicate_pattern(self, seq_idx: int) -> int:
         """
         Creates a fresh copy of the given pattern, and appends it at the end of the song sequence.
 
-        :param pattern: The pattern index (within the song sequence) to be duplicated.
+        :param seq_idx: The pattern index (within the song sequence) to be duplicated.
         :return: The index of the new pattern.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
 
-        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[pattern]]))
+        self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[seq_idx]]))
         n = len(self.patterns) - 1
         self.pattern_seq.append(n)
 
@@ -264,12 +346,12 @@ class Song(ABC):
     -------------------------------------
     '''
 
-    def write_note(self, pattern:int, channel: int, row: int, sample: int, period: str, effect: str = ""):
+    def set_note(self, seq_idx:int, channel: int, row: int, sample: int, period: str, effect: str = ""):
         """
         Writes a note in the given pattern, channel and row with the given sample.
         If no effect is given and the current note already has a speed effect, leaves it unchanged.
 
-        :param pattern: The pattern index (in the sequence) to write to.
+        :param seq_idx: The pattern index (in the sequence) to write to.
         :param channel: The channel index to write to, 0-based.
         :param row: The row index to write to, 0-based.
         :param sample: The sample index to write.
@@ -278,11 +360,11 @@ class Song(ABC):
         :return: None.
         """
 
-        cur_efx = self.patterns[self.pattern_seq[pattern]].data[channel][row].effect
+        cur_efx = self.patterns[self.pattern_seq[seq_idx]].data[channel][row].effect
         if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
             effect = cur_efx
 
-        self.patterns[self.pattern_seq[pattern]].data[channel][row] = (
+        self.patterns[self.pattern_seq[seq_idx]].data[channel][row] = (
             Note(sample, period, effect))
 
     '''
@@ -291,17 +373,17 @@ class Song(ABC):
     -------------------------------------
     '''
 
-    def write_effect(self, pattern: int, channel: int, row: int, effect: str = ""):
+    def set_effect(self, seq_idx: int, channel: int, row: int, effect: str = ""):
         """
         Writes a given effect in the given pattern, channel and row.
         Does not touch the period or sample, if present.
 
-        :param pattern: The pattern index (in the sequence) to write to.
+        :param seq_idx: The pattern index (in the sequence) to write to.
         :param channel: The channel index to write to, 0-based.
         :param row: The row index to write to, 0-based.
         :param effect: The desired effect, e.g. "ED1".
         :return: None.
         """
 
-        self.patterns[self.pattern_seq[pattern]].data[channel][row].effect \
+        self.patterns[self.pattern_seq[seq_idx]].data[channel][row].effect \
             = effect
