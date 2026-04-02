@@ -240,6 +240,7 @@ class S3MSong(Song):
 
         self.samples = [S3MSample() for _ in range(self.MAX_SAMPLES)]
         self._load_pcm_instruments(data, fname)
+        self._load_patterns(data, fname)
 
         if verbose:
             print('done.')
@@ -446,6 +447,86 @@ class S3MSong(Song):
         unsigned_waveform = array.array('B')
         unsigned_waveform.frombytes(raw)
         return array.array('b', (value - 128 for value in unsigned_waveform))
+
+    def _load_patterns(self, data: bytes, fname: str) -> None:
+        self.patterns = [self._new_pattern() for _ in range(self.pattern_count)]
+        for pat_idx, pat_offset in enumerate(self.pattern_offsets):
+            if pat_offset == 0:
+                continue
+            if pat_offset + 2 > len(data):
+                raise NotImplementedError(
+                    f"Invalid S3M pattern pointer for pattern {pat_idx} in {os.path.basename(fname)}."
+                )
+            packed_len = struct.unpack_from('<H', data, pat_offset)[0]
+            if packed_len < 2 or pat_offset + packed_len > len(data):
+                raise NotImplementedError(
+                    f"Invalid S3M packed pattern length for pattern {pat_idx} in {os.path.basename(fname)}."
+                )
+            packed_data = data[pat_offset + 2:pat_offset + packed_len]
+            self._decode_pattern_data(self.patterns[pat_idx], packed_data)
+
+    def _decode_pattern_data(self, pat: Pattern, packed_data: bytes) -> None:
+        row = 0
+        pos = 0
+        while row < self.ROWS and pos < len(packed_data):
+            what = packed_data[pos]
+            pos += 1
+            if what == 0:
+                row += 1
+                continue
+
+            raw_channel = what & 0x1F
+            note_value = None
+            instrument_idx = 0
+            volume = -1
+            effect = ''
+
+            if what & 0x20:
+                if pos + 2 > len(packed_data):
+                    raise NotImplementedError("Invalid S3M packed pattern data (truncated note/instrument pair).")
+                note_value = packed_data[pos]
+                instrument_idx = packed_data[pos + 1]
+                pos += 2
+
+            if what & 0x40:
+                if pos >= len(packed_data):
+                    raise NotImplementedError("Invalid S3M packed pattern data (truncated volume byte).")
+                raw_volume = packed_data[pos]
+                volume = raw_volume if raw_volume <= 64 else -1
+                pos += 1
+
+            if what & 0x80:
+                if pos + 2 > len(packed_data):
+                    raise NotImplementedError("Invalid S3M packed pattern data (truncated effect pair).")
+                command = packed_data[pos]
+                info = packed_data[pos + 1]
+                pos += 2
+                if command != 0:
+                    effect = f"{chr(ord('A') + command - 1)}{info:02X}"
+
+            compact_channel = self.raw_to_compact_channel.get(raw_channel)
+            if compact_channel is None:
+                continue
+
+            note = S3MNote()
+            note.instrument_idx = instrument_idx
+            note.volume = volume
+            note.effect = effect
+            if note_value is not None:
+                note.period = self._decode_note_value(note_value)
+            pat.data[compact_channel][row] = note
+
+    @staticmethod
+    def _decode_note_value(note_value: int) -> str:
+        if note_value == 255:
+            return ''
+        if note_value == 254:
+            return 'off'
+        semitone = note_value & 0x0F
+        octave = (note_value >> 4) & 0x0F
+        if semitone > 11:
+            raise NotImplementedError(f"Unsupported S3M note value {note_value}.")
+        return f"{Song.PERIOD_SEQ[semitone]}{octave}"
 
     @staticmethod
     def _decode_text(raw: bytes) -> str:

@@ -73,7 +73,13 @@ def _build_s3m_header_bytes() -> bytes:
     header += bytes([0, 0xFE, 2, 0xFF, 1])
     header += struct.pack("<3H", 0x0030, 0x0040, 0x0050)
     header += bytes(range(32))
-    return bytes(header)
+    data = bytearray(header)
+    for offset in (0x300, 0x400, 0x500):
+        if len(data) > offset:
+            raise AssertionError("Synthetic S3M header fixture exceeded a declared pattern offset")
+        data += b"\x00" * (offset - len(data))
+        data += struct.pack("<H", 2)
+    return bytes(data)
 
 
 def test_s3m_header_load_synthetic() -> None:
