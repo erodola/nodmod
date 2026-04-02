@@ -135,7 +135,7 @@ class Song(ABC):
         Converts a 0-95 note index to a note string like C-4.
         """
         if idx < 0 or idx >= 96:
-            raise ValueError(f"Invalid note index {idx} (expected 0-95).")
+            raise IndexError(f"Invalid note index {idx} (expected 0-95).")
         octave = idx // 12 + 1
         pitch = Song.PERIOD_SEQ[idx % 12]
         return f"{pitch}{octave}"

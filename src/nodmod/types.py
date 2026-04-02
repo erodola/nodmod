@@ -281,7 +281,7 @@ class Instrument:
             return
         for v in map96:
             if v < 1 or v > n_samples:
-                raise ValueError(f"Invalid sample index {v} (instrument has {n_samples} samples).")
+                raise IndexError(f"Invalid sample index {v} (expected 1-{n_samples}).")
         # Store as the internal 0-based sample_map representation.
         self.sample_map = [v - 1 for v in map96]
 
@@ -313,7 +313,7 @@ class Instrument:
         if n_samples == 0:
             raise ValueError("Instrument has no samples.")
         if sample_idx < 1 or sample_idx > n_samples:
-            raise ValueError(f"Invalid sample index {sample_idx} for instrument with {n_samples} samples")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{n_samples}).")
         if not self.sample_map or len(self.sample_map) != 96:
             self.sample_map = [0] * 96
         self.sample_map[note_idx] = sample_idx - 1

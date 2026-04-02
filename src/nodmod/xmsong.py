@@ -1906,7 +1906,7 @@ class XMSong(Song):
             raise ValueError(f"Invalid note range {note_low}-{note_high} (expected 0-95 and low<=high).")
         inst = self.get_instrument(inst_idx)
         if sample_idx < 1 or sample_idx > len(inst.samples):
-            raise ValueError(f"Invalid sample index {sample_idx} (instrument has {len(inst.samples)} samples).")
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{len(inst.samples)}).")
         if not inst.sample_map or len(inst.sample_map) != 96:
             inst.sample_map = [0] * 96
         for note in range(low_idx, high_idx + 1):
@@ -1931,7 +1931,7 @@ class XMSong(Song):
         """
         src_inst = src.get_instrument(src_inst_idx)
         if src_sample_idx < 1 or src_sample_idx > len(src_inst.samples):
-            raise IndexError(f"Invalid sample index {src_sample_idx}")
+            raise IndexError(f"Invalid sample index {src_sample_idx} (expected 1-{len(src_inst.samples)}).")
         smp = src_inst.samples[src_sample_idx - 1]
         new_smp = XMSample()
         new_smp.name = smp.name
