@@ -74,8 +74,23 @@ song.save("music/lead.xm")
 
 - `add_pattern()` returns a pattern pool index, then also appends that pattern to the song sequence. Most note-editing methods take a sequence index.
 - XM instrument indices and XM sample indices are 1-based. MOD sample indices are also 1-based.
+- `MODSong.load_sample()`, `MODSong.load_sample_from_raw()`, and `MODSong.copy_sample_from()` use `None` to auto-pick the next empty sample slot.
 - MOD sample finetune uses the raw tracker nibble `0..15`; musically, values `8..15` represent `-8..-1`.
 - XM sample finetune is signed `-128..127`.
+
+## Indexing Rules
+
+- Sequence indices are 0-based positions in `pattern_seq`.
+- Sequence insertion positions are 0-based and may be equal to `len(pattern_seq)`.
+- Pattern indices are 0-based indices in `patterns`.
+- Row indices and channel indices are 0-based.
+- Note indices are 0-based in the range `0..95` and map to `C-1..B-8`.
+- MOD sample indices are 1-based in the range `1..31`.
+- XM instrument indices are 1-based.
+- XM sample indices are 1-based within each instrument.
+- XM sample-map getters and setters use public 1-based sample indices even though the internal storage is 0-based.
+
+Equivalent out-of-range indexing mistakes raise `IndexError`. Malformed note strings and other non-index value-domain problems raise `ValueError`.
 
 ## Extras
 
