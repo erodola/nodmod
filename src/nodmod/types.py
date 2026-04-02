@@ -9,7 +9,7 @@ This module contains all the data classes used across different tracker formats:
 
 import array
 
-__all__ = ['Pattern', 'Sample', 'XMSample', 'EnvelopePoint', 'Instrument', 'Note', 'MODNote', 'XMNote']
+__all__ = ['Pattern', 'Sample', 'XMSample', 'S3MSample', 'EnvelopePoint', 'Instrument', 'Note', 'MODNote', 'XMNote', 'S3MNote']
 
 
 class Note:
@@ -111,6 +111,42 @@ class XMNote(Note):
                self.effect == '' and self.vol_cmd == ''
 
 
+class S3MNote(Note):
+    """
+    Note class for S3M files.
+    S3M notes add a simple volume column without XM's extra volume commands.
+    """
+
+    def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = '', volume: int = -1):
+        super().__init__(instrument_idx, period, effect)
+        self.volume = volume
+
+    def __repr__(self):
+        s = ''
+        if self.period == '':
+            s += '--- '
+        elif self.period == 'off':
+            s += '=== '
+        else:
+            s += self.period + ' '
+        if self.instrument_idx == 0:
+            s += '-- '
+        else:
+            s += f"{self.instrument_idx:02d} "
+        if self.volume < 0:
+            s += '-- '
+        else:
+            s += f"v{self.volume:02d} "
+        if self.effect == '':
+            s += '---'
+        else:
+            s += self.effect
+        return s
+
+    def is_empty(self) -> bool:
+        return self.instrument_idx == 0 and self.period == '' and self.effect == '' and self.volume < 0
+
+
 class Pattern:
     """
     A pattern is a page of notes, and is part of a song.
@@ -196,6 +232,22 @@ class XMSample(Sample):
         # Waveform: 8-bit uses 'b' (signed byte), 16-bit uses 'h' (signed short)
         # Default to 8-bit, changed when loading 16-bit samples
         self.waveform = array.array('b')
+
+
+class S3MSample(Sample):
+    """
+    Sample class for S3M PCM instruments.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.filename = ""
+        self.c2spd = 8363
+        self.pack = 0
+        self.is_16bit = False
+        self.is_stereo = False
+        self.dsk = 0
+        self._reserved: bytes = b''
 
 
 class EnvelopePoint:
