@@ -2,17 +2,18 @@
 
 NodMOD is a Python library for reading, editing, and writing tracker modules.
 
-It currently focuses on two classic formats:
+It currently focuses on three classic formats:
 
 - MOD
 - XM
+- S3M
 
 The project is built around direct programmatic editing. You load or create a song, manipulate patterns, notes, samples, instruments, and effects in Python, then save the result back to disk.
 
 ## What It Does
 
-- Load MOD and XM files
-- Save edited or newly created MOD and XM files
+- Load MOD, XM, and S3M files
+- Save edited or newly created MOD, XM, and S3M files
 - Create, duplicate, resize, clear, and reorder patterns
 - Edit notes, effects, rows, channels, samples, and XM instruments
 - Import WAV audio into MOD samples or XM instrument samples
@@ -75,15 +76,28 @@ song.set_global_volume(0, 0, 0, 64)
 song.save("music/lead.xm")
 ```
 
+```python
+from nodmod import S3MSong
+
+song = S3MSong()
+song.set_n_channels(8)
+
+song.set_note(0, 0, 0, 1, "C-4", effect="A03", volume=32)
+song.set_note(0, 1, 4, 2, "G-4", effect="T96", volume=40)
+
+song.save("music/sketch.s3m")
+```
+
 ## Core Model
 
 At a high level, the library exposes a small set of central objects:
 
 - `MODSong` for MOD modules
 - `XMSong` for XM modules
+- `S3MSong` for S3M modules
 - `Pattern` for pattern data
-- `Note` and `XMNote` for note cells
-- `Sample` and `XMSample` for waveform data
+- `Note`, `XMNote`, and `S3MNote` for note cells
+- `Sample`, `XMSample`, and `S3MSample` for waveform data
 - `Instrument` for XM instruments and sample maps
 
 The API is intentionally close to tracker structure rather than trying to hide it behind a higher-level composition DSL.
@@ -92,9 +106,16 @@ The API is intentionally close to tracker structure rather than trying to hide i
 
 - MOD notes reference samples directly.
 - XM notes reference instruments, and instruments contain samples.
+- S3M notes reference sample / instrument slots directly for PCM modules.
 - MOD sample slots are 1-based in the public API.
 - XM instrument indices and XM sample indices are 1-based in the public API.
+- S3M sample slots are 1-based in the public API.
 - Pattern order and pattern storage are separate concepts, as they are in tracker files.
+
+Current S3M scope:
+
+- PCM S3M modules are supported for load, edit, save, and round-trip tests.
+- Adlib / OPL S3M instruments are detected and rejected explicitly; they are not supported yet.
 
 For most day-to-day use, the practical rule is simple: sequence positions, rows, and channels behave like normal Python indices, while tracker sample and instrument slots follow tracker conventions.
 
@@ -127,7 +148,7 @@ This is an editing-focused library, not yet a full tracker toolkit. The codebase
 Useful contributions include:
 
 - bug fixes and behavioral cleanup
-- stronger round-trip coverage for MOD and XM files
+- stronger round-trip coverage for MOD, XM, and S3M files
 - better public examples
 - support for more tracker operations and formats
 
