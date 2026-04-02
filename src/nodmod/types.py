@@ -230,9 +230,9 @@ class Instrument:
         # List of Sample objects belonging to this instrument
         self.samples: list[Sample] = []
         
-        # Sample-to-note mapping: which sample index to use for each note (0-95)
-        # In XM, this maps MIDI-like note numbers to sample indices within self.samples
-        # If empty, all notes use sample index 0 (or no sample if samples list is empty)
+        # Internal 0-based sample_map: which sample slot to use for each note index 0-95.
+        # Public APIs expose 1-based sample indices and convert at the boundary.
+        # If empty, there is no public sample map configured yet.
         self.sample_map: list[int] = []
         
         # Volume envelope
@@ -269,7 +269,7 @@ class Instrument:
 
     def set_sample_map(self, map96: list[int]):
         """
-        Sets the 96-entry sample map using 1-based sample indices.
+        Sets the public 96-entry sample map using 1-based sample indices.
         Each value must be in [1, n_samples].
         """
         if len(map96) != 96:
@@ -282,12 +282,12 @@ class Instrument:
         for v in map96:
             if v < 1 or v > n_samples:
                 raise ValueError(f"Invalid sample index {v} (instrument has {n_samples} samples).")
-        # Store as 0-based indices internally
+        # Store as the internal 0-based sample_map representation.
         self.sample_map = [v - 1 for v in map96]
 
     def get_sample_map(self) -> list[int]:
         """
-        Returns the 96-entry sample map using 1-based sample indices.
+        Returns the public 96-entry sample map using 1-based sample indices.
         """
         if not self.sample_map:
             return []
@@ -304,7 +304,7 @@ class Instrument:
 
     def set_sample_for_note(self, note: str | int, sample_idx: int):
         """
-        Sets the sample for a given note (0-95) using 1-based sample indices.
+        Sets the public 1-based sample index for a given note index 0-95.
         """
         note_idx = self._note_str_to_idx(note)
         if note_idx < 0 or note_idx >= 96:

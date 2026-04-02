@@ -430,7 +430,7 @@ class XMSong(Song):
                 sample_header_size = 40
                 data += sample_header_size.to_bytes(4, byteorder='little')
                 
-                # Sample map (96 bytes)
+                # Internal 0-based sample_map as stored in XM instrument headers (96 bytes)
                 sample_map = bytearray(96)
                 for i, s in enumerate(inst.sample_map[:96]):
                     sample_map[i] = s
@@ -959,8 +959,7 @@ class XMSong(Song):
                         byteorder='little', signed=False
                     )
                     
-                    # Sample number for all notes (96 bytes at offset +33)
-                    # Maps note numbers 0-95 to sample indices within this instrument
+                    # Internal 0-based sample_map for note indices 0-95 (96 bytes at offset +33)
                     sample_map_bytes = instrument_data[ext_offset + 4:ext_offset + 100]
                     self.instruments[i].sample_map = list(sample_map_bytes)
                     
@@ -1898,8 +1897,8 @@ class XMSong(Song):
         note_high: str | int,
     ) -> None:
         """
-        Maps a sample to a range of notes (inclusive).
-        Notes can be given as strings (e.g. 'C-4') or indices (0-95).
+        Maps a public 1-based sample index to an inclusive note range.
+        Notes can be given as strings (e.g. 'C-4') or as 0-based note indices (0-95).
         """
         low_idx = self._note_str_to_idx(note_low)
         high_idx = self._note_str_to_idx(note_high)
@@ -1915,7 +1914,7 @@ class XMSong(Song):
 
     def set_sample_map_all(self, inst_idx: int, sample_idx: int) -> None:
         """
-        Maps a sample to all notes (0-95).
+        Maps a public 1-based sample index to all note indices 0-95.
         """
         self.set_sample_map_range(inst_idx, sample_idx, 0, 95)
 
@@ -2018,7 +2017,7 @@ class XMSong(Song):
             new_smp.waveform = smp.waveform.__class__(smp.waveform.typecode, smp.waveform)
             self.add_sample(new_idx, new_smp)
 
-        # Sample map (1-based for API)
+        # Public 1-based sample map converted from the internal 0-based sample_map.
         if inst.samples:
             map_1based = [v + 1 for v in inst.sample_map[:96]]
             new_inst.set_sample_map(map_1based)
