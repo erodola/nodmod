@@ -592,26 +592,25 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def load_sample(self, fname: str, sample_idx: int = 0) -> tuple[int, Sample]:
+    def load_sample(self, fname: str, sample_idx: int | None = None) -> tuple[int, Sample]:
         """
         Loads a sample from a WAV file, and stores it at the given sample index.
 
         :param fname: The complete file path to the .wav file.
-        :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
-                           Use 0 to automatically use the next available slot.
+        :param sample_idx: The destination 1-based sample index, or None to use the next empty slot.
         :return: A tuple (int, Sample) containing:
                  - the index of the added sample, from 1 to 31
                  - the corresponding sample object
         """
-        if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}.")
+        if sample_idx is not None and (sample_idx <= 0 or sample_idx > MODSong.SAMPLES):
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
         
-        if sample_idx == 0:
+        if sample_idx is None:
             for i in range(MODSong.SAMPLES):
                 if len(self.samples[i].waveform) == 0:
                     sample_idx = i + 1
                     break
-            if sample_idx == 0:
+            if sample_idx is None:
                 raise ValueError("No empty sample slots available (1-31 are full).")
 
         self.samples[sample_idx - 1] = Sample()  # reset all attributes
@@ -625,7 +624,7 @@ class MODSong(Song):
 
         return sample_idx, self.samples[sample_idx - 1]
 
-    def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int = 0, input_sr: int = NTSC_SR) -> tuple[int, Sample]:
+    def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int | None = None, input_sr: int = NTSC_SR) -> tuple[int, Sample]:
         """
         Loads a sample from a raw list of samples, and stores it at the given sample index.
         The raw samples should be a mono list of normalized float values in the range [-1.0, 1.0].
@@ -633,23 +632,21 @@ class MODSong(Song):
         If the sample rate is different from NTSC_SR, the samples will be resampled to NTSC_SR.
 
         :param raw_samples: Mono normalized PCM samples in the range [-1.0, 1.0].
-        :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
-                           Use 0 to automatically use the next available slot.
+        :param sample_idx: The destination 1-based sample index, or None to use the next empty slot.
         :param input_sr: The sample rate of the input raw samples (default NTSC_SR).
         :return: A tuple (int, Sample) containing:
                  - the index of the added sample, from 1 to 31
                  - the corresponding sample object
         """
-        if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}.")
+        if sample_idx is not None and (sample_idx <= 0 or sample_idx > MODSong.SAMPLES):
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
         
-        # seek for an empty slot if sample_idx == 0
-        if sample_idx == 0:
+        if sample_idx is None:
             for i in range(MODSong.SAMPLES):
                 if len(self.samples[i].waveform) == 0:
                     sample_idx = i + 1
                     break
-            if sample_idx == 0:
+            if sample_idx is None:
                 raise ValueError("No empty sample slots available (1-31 are full).")
 
         self.samples[sample_idx - 1] = Sample()  # reset all attributes
@@ -834,15 +831,19 @@ class MODSong(Song):
         self.samples[sample_idx - 1] = sample
         self._update_n_actual_samples()
 
-    def copy_sample_from(self, src: 'MODSong', src_sample_idx: int, dst_sample_idx: int = 0) -> int:
+    def copy_sample_from(self, src: 'MODSong', src_sample_idx: int, dst_sample_idx: int | None = None) -> int:
         """
         Copies a single sample from another MODSong into this song.
-        Returns the destination 1-based sample index.
+
+        :param src: The source MOD song.
+        :param src_sample_idx: The 1-based sample index to copy from the source.
+        :param dst_sample_idx: The destination 1-based sample index, or None to use the next empty slot.
+        :return: The destination 1-based sample index.
         """
         if src_sample_idx <= 0 or src_sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {src_sample_idx}")
-        if dst_sample_idx < 0 or dst_sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {dst_sample_idx}")
+            raise IndexError(f"Invalid source sample index {src_sample_idx} (expected 1-31).")
+        if dst_sample_idx is not None and (dst_sample_idx <= 0 or dst_sample_idx > MODSong.SAMPLES):
+            raise IndexError(f"Invalid destination sample index {dst_sample_idx} (expected 1-31).")
 
         src_smp = src.samples[src_sample_idx - 1]
         new_smp = Sample()
@@ -854,12 +855,12 @@ class MODSong(Song):
         new_smp.waveform = src_smp.waveform.__class__(src_smp.waveform.typecode, src_smp.waveform)
         new_smp.tune = src_smp.tune
 
-        if dst_sample_idx == 0:
+        if dst_sample_idx is None:
             for i in range(MODSong.SAMPLES):
                 if len(self.samples[i].waveform) == 0:
                     dst_sample_idx = i + 1
                     break
-            if dst_sample_idx == 0:
+            if dst_sample_idx is None:
                 raise ValueError("Couldn't find an empty slot for the new sample.")
 
         self.samples[dst_sample_idx - 1] = new_smp
@@ -873,7 +874,7 @@ class MODSong(Song):
         """
         new_indices: list[int] = []
         for idx in src_sample_indices:
-            new_indices.append(self.copy_sample_from(src, idx, 0))
+            new_indices.append(self.copy_sample_from(src, idx, None))
         return new_indices
 
     def remove_sample(self, sample_idx: int):
@@ -929,10 +930,10 @@ class MODSong(Song):
             raise ValueError(f"MOD patterns have fixed 64 rows (got {n_rows}).")
 
 
-    def add_to_sequence(self, pattern_idx: int, pos: int | None = None) -> None:
+    def add_to_sequence(self, pattern_idx: int, sequence_position: int | None = None) -> None:
         if len(self.pattern_seq) + 1 > 128:
             raise ValueError(f"Pattern sequence too long ({len(self.pattern_seq) + 1}). MOD supports up to 128.")
-        super().add_to_sequence(pattern_idx, pos)
+        super().add_to_sequence(pattern_idx, sequence_position)
 
 
     def set_sequence(self, seq: list[int]) -> None:
@@ -941,18 +942,18 @@ class MODSong(Song):
         super().set_sequence(seq)
 
 
-    def clear_pattern(self, pattern: int):
+    def clear_pattern(self, sequence_idx: int):
         """
-        Clears completely a specified pattern.
+        Clears completely a specified sequence pattern.
         The pattern is not removed from the song sequence, but all the notes are set to empty.
 
-        :param pattern: The pattern index (within the song sequence) to be cleared.
+        :param sequence_idx: The 0-based sequence index to clear.
         :return: None.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
-        p = self.pattern_seq[pattern]
+        p = self.pattern_seq[sequence_idx]
         for r in range(MODSong.ROWS):
             for c in range(MODSong.CHANNELS):
                 self.patterns[p].data[c][r] = Note()
@@ -969,24 +970,24 @@ class MODSong(Song):
 
         return n
         
-    def get_effective_row_count(self, pattern: int, include_loops: bool = True) -> int:
+    def get_effective_row_count(self, sequence_idx: int, include_loops: bool = True) -> int:
         """
-        Returns the effective number of rows that get played in a pattern.
+        Returns the effective number of rows that get played in a sequence pattern.
         Accounts for position jumps, loops, and breaks.
 
         TODO: Implement a version for the entire song. 
               It's not so trivial, because of position jumps effects (Dxx) and such.
 
-        :param pattern: The pattern index (within the song sequence).
+        :param sequence_idx: The 0-based sequence index to inspect.
         :param include_loops: True to also count the rows that get played in loops.
         :return: The effective number of rows that gets played in the pattern.
         """
-        if pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         loop_start_row = 0  # used by E6x effect
 
-        data = copy.deepcopy(self.patterns[self.pattern_seq[pattern]].data)
+        data = copy.deepcopy(self.patterns[self.pattern_seq[sequence_idx]].data)
 
         unrolled_data = [[] for _ in range(MODSong.CHANNELS)]
 
@@ -1126,11 +1127,11 @@ class MODSong(Song):
         else:
             return ""
 
-    def get_note(self, pattern_in_song: int, row: int, channel: int) -> Note:
+    def get_note(self, sequence_idx: int, row: int, channel: int) -> Note:
         """
         Returns the note object at the given pattern, row and channel.
         
-        :param pattern_in_song: The pattern index (in the sequence) to read from.
+        :param sequence_idx: The 0-based sequence index to read from.
         :param row: The row index to read from, 0-based.
         :param channel: The channel index to read from, 0-based.
         :return: The note object.
@@ -1141,10 +1142,10 @@ class MODSong(Song):
         if channel < 0 or channel >= MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
-        if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index in sequence {pattern_in_song} (expected 0-{len(self.pattern_seq)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
-        return self.patterns[self.pattern_seq[pattern_in_song]].data[channel][row]
+        return self.patterns[self.pattern_seq[sequence_idx]].data[channel][row]
     
     '''
     -------------------------------------
