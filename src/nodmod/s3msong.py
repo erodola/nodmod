@@ -265,7 +265,7 @@ class S3MSong(Song):
         if len(data) < 96:
             raise NotImplementedError("Invalid S3M file format (header too short).")
 
-        self.artist, _ = Song.artist_songname_from_filename(fname)
+        self.artist = "Unknown Artist"
         self.songname = self._decode_text(data[:28])
 
         self.sig1 = data[28]
@@ -332,6 +332,13 @@ class S3MSong(Song):
         self.instrument_offsets = [ptr << 4 for ptr in self.instrument_parapointers]
         self.pattern_offsets = [ptr << 4 for ptr in self.pattern_parapointers]
 
+        highest_order = max((order for order in self.order_list_raw if order not in {0xFE, 0xFF}), default=-1)
+        if highest_order >= self.pattern_count:
+            missing = highest_order + 1 - self.pattern_count
+            self.pattern_parapointers.extend([0] * missing)
+            self.pattern_offsets.extend([0] * missing)
+            self.pattern_count = highest_order + 1
+
         self.default_panning = []
         if self.default_pan_flag == 252:
             if len(data) < offset + 32:
@@ -345,10 +352,6 @@ class S3MSong(Song):
                 break
             if order == 0xFE:
                 continue
-            if order >= self.pattern_count:
-                raise NotImplementedError(
-                    f"Invalid S3M order entry {order} (pattern count {self.pattern_count})."
-                )
             self.pattern_seq.append(order)
 
         self.samples = [S3MSample() for _ in range(self.MAX_SAMPLES)]
@@ -750,21 +753,21 @@ class S3MSong(Song):
 
             if what & 0x20:
                 if pos + 2 > len(packed_data):
-                    raise NotImplementedError("Invalid S3M packed pattern data (truncated note/instrument pair).")
+                    return
                 note_value = packed_data[pos]
                 instrument_idx = packed_data[pos + 1]
                 pos += 2
 
             if what & 0x40:
                 if pos >= len(packed_data):
-                    raise NotImplementedError("Invalid S3M packed pattern data (truncated volume byte).")
+                    return
                 raw_volume = packed_data[pos]
                 volume = raw_volume if raw_volume <= 64 else -1
                 pos += 1
 
             if what & 0x80:
                 if pos + 2 > len(packed_data):
-                    raise NotImplementedError("Invalid S3M packed pattern data (truncated effect pair).")
+                    return
                 command = packed_data[pos]
                 info = packed_data[pos + 1]
                 pos += 2
