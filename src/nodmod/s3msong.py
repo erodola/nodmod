@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import os
+import struct
 
 from nodmod import Pattern
 from nodmod import S3MNote
@@ -35,18 +37,29 @@ class S3MSong(Song):
     def __init__(self):
         super().__init__()
 
-        self.tracker_version = 0
-        self.format_version = 1
+        self.sig1 = 0x1A
+        self.song_type = 0x10
+        self.tracker_version = 0x1320
         self.flags = 0
         self.global_volume = 64
         self.initial_speed = 6
         self.initial_tempo = 125
-        self.master_volume = 64
+        self.master_volume = 0xB0
         self.ultra_click_removal = 0
         self.sample_type = 2
         self.default_pan_flag = 0
         self.special = 0
+        self.reserved1 = 0
+        self.reserved2 = b'\x00' * 8
         self.default_panning: list[int] = []
+        self.order_count = 0
+        self.instrument_count = 0
+        self.pattern_count = 0
+        self.order_list_raw: list[int] = []
+        self.instrument_parapointers: list[int] = []
+        self.pattern_parapointers: list[int] = []
+        self.instrument_offsets: list[int] = []
+        self.pattern_offsets: list[int] = []
 
         self.samples: list[S3MSample] = [S3MSample() for _ in range(self.MAX_SAMPLES)]
         self.n_actual_samples = 0
@@ -97,8 +110,9 @@ class S3MSong(Song):
         new_song.pattern_seq = copy.deepcopy(self.pattern_seq)
         new_song.samples = copy.deepcopy(self.samples)
         new_song.n_actual_samples = self.n_actual_samples
+        new_song.sig1 = self.sig1
+        new_song.song_type = self.song_type
         new_song.tracker_version = self.tracker_version
-        new_song.format_version = self.format_version
         new_song.flags = self.flags
         new_song.global_volume = self.global_volume
         new_song.initial_speed = self.initial_speed
@@ -108,7 +122,17 @@ class S3MSong(Song):
         new_song.sample_type = self.sample_type
         new_song.default_pan_flag = self.default_pan_flag
         new_song.special = self.special
+        new_song.reserved1 = self.reserved1
+        new_song.reserved2 = self.reserved2
         new_song.default_panning = copy.deepcopy(self.default_panning)
+        new_song.order_count = self.order_count
+        new_song.instrument_count = self.instrument_count
+        new_song.pattern_count = self.pattern_count
+        new_song.order_list_raw = list(self.order_list_raw)
+        new_song.instrument_parapointers = list(self.instrument_parapointers)
+        new_song.pattern_parapointers = list(self.pattern_parapointers)
+        new_song.instrument_offsets = list(self.instrument_offsets)
+        new_song.pattern_offsets = list(self.pattern_offsets)
         new_song.channel_settings = list(self.channel_settings)
         new_song._rebuild_channel_mappings()
         return new_song
@@ -117,7 +141,106 @@ class S3MSong(Song):
         raise NotImplementedError("S3M save support is not implemented yet.")
 
     def load(self, fname: str, verbose: bool = True):
-        raise NotImplementedError("S3M load support is not implemented yet.")
+        if verbose:
+            print(f'Loading {fname}... ', end='', flush=True)
+
+        with open(fname, 'rb') as s3m_file:
+            data = s3m_file.read()
+
+        if len(data) < 96:
+            raise NotImplementedError("Invalid S3M file format (header too short).")
+
+        self.artist, _ = Song.artist_songname_from_filename(fname)
+        self.songname = self._decode_text(data[:28])
+
+        self.sig1 = data[28]
+        self.song_type = data[29]
+        if self.sig1 != 0x1A or self.song_type != 0x10:
+            raise NotImplementedError(
+                f"Not an S3M module. Signature/type mismatch: sig1={self.sig1:#04x}, type={self.song_type:#04x}."
+            )
+
+        self.reserved1 = struct.unpack_from('<H', data, 30)[0]
+        (
+            self.order_count,
+            self.instrument_count,
+            self.pattern_count,
+            self.flags,
+            self.tracker_version,
+            self.sample_type,
+        ) = struct.unpack_from('<6H', data, 32)
+
+        if data[44:48] != b'SCRM':
+            raise NotImplementedError(f"Not an S3M module. Missing SCRM signature: {data[44:48]!r}.")
+        if self.sample_type not in (1, 2):
+            raise NotImplementedError(f"Unsupported S3M sample type {self.sample_type}.")
+        if self.instrument_count > self.MAX_SAMPLES:
+            raise NotImplementedError(
+                f"Too many instruments: {self.instrument_count} (S3M support currently expects <= {self.MAX_SAMPLES})."
+            )
+
+        self.global_volume = data[48]
+        self.initial_speed = data[49] or self.initial_speed
+        tempo = data[50]
+        if tempo >= 33:
+            self.initial_tempo = tempo
+        self.master_volume = data[51]
+        self.ultra_click_removal = data[52]
+        self.default_pan_flag = data[53]
+        self.reserved2 = bytes(data[54:62])
+        self.special = struct.unpack_from('<H', data, 62)[0]
+        self.channel_settings = list(data[64:96])
+        self._rebuild_channel_mappings()
+
+        offset = 96
+        tables_size = self.order_count + 2 * self.instrument_count + 2 * self.pattern_count
+        if len(data) < offset + tables_size:
+            raise NotImplementedError("Invalid S3M file format (truncated order/parapointer tables).")
+
+        self.order_list_raw = list(data[offset:offset + self.order_count])
+        offset += self.order_count
+
+        if self.instrument_count:
+            fmt = '<' + 'H' * self.instrument_count
+            self.instrument_parapointers = list(struct.unpack_from(fmt, data, offset))
+        else:
+            self.instrument_parapointers = []
+        offset += 2 * self.instrument_count
+
+        if self.pattern_count:
+            fmt = '<' + 'H' * self.pattern_count
+            self.pattern_parapointers = list(struct.unpack_from(fmt, data, offset))
+        else:
+            self.pattern_parapointers = []
+        offset += 2 * self.pattern_count
+
+        self.instrument_offsets = [ptr << 4 for ptr in self.instrument_parapointers]
+        self.pattern_offsets = [ptr << 4 for ptr in self.pattern_parapointers]
+
+        self.default_panning = []
+        if self.default_pan_flag == 252:
+            if len(data) < offset + 32:
+                raise NotImplementedError("Invalid S3M file format (missing default panning table).")
+            self.default_panning = list(data[offset:offset + 32])
+
+        self.patterns = [self._new_pattern() for _ in range(self.pattern_count)]
+        self.pattern_seq = []
+        for order in self.order_list_raw:
+            if order == 0xFF:
+                break
+            if order == 0xFE:
+                continue
+            if order >= self.pattern_count:
+                raise NotImplementedError(
+                    f"Invalid S3M order entry {order} (pattern count {self.pattern_count})."
+                )
+            self.pattern_seq.append(order)
+
+        self.samples = [S3MSample() for _ in range(self.MAX_SAMPLES)]
+        self.n_actual_samples = 0
+
+        if verbose:
+            print('done.')
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         tick_duration = self.get_tick_duration(self.initial_tempo)
@@ -225,3 +348,7 @@ class S3MSong(Song):
             raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
         self.samples[sample_idx - 1] = sample
         self._update_n_actual_samples()
+
+    @staticmethod
+    def _decode_text(raw: bytes) -> str:
+        return raw.split(b'\x00', 1)[0].decode('latin-1', errors='replace').rstrip(' ')
