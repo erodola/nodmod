@@ -941,18 +941,18 @@ class MODSong(Song):
         super().set_sequence(seq)
 
 
-    def clear_pattern(self, pattern: int):
+    def clear_pattern(self, sequence_idx: int):
         """
-        Clears completely a specified pattern.
+        Clears completely a specified sequence pattern.
         The pattern is not removed from the song sequence, but all the notes are set to empty.
 
-        :param pattern: The pattern index (within the song sequence) to be cleared.
+        :param sequence_idx: The 0-based sequence index to clear.
         :return: None.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
-        p = self.pattern_seq[pattern]
+        p = self.pattern_seq[sequence_idx]
         for r in range(MODSong.ROWS):
             for c in range(MODSong.CHANNELS):
                 self.patterns[p].data[c][r] = Note()
@@ -969,24 +969,24 @@ class MODSong(Song):
 
         return n
         
-    def get_effective_row_count(self, pattern: int, include_loops: bool = True) -> int:
+    def get_effective_row_count(self, sequence_idx: int, include_loops: bool = True) -> int:
         """
-        Returns the effective number of rows that get played in a pattern.
+        Returns the effective number of rows that get played in a sequence pattern.
         Accounts for position jumps, loops, and breaks.
 
         TODO: Implement a version for the entire song. 
               It's not so trivial, because of position jumps effects (Dxx) and such.
 
-        :param pattern: The pattern index (within the song sequence).
+        :param sequence_idx: The 0-based sequence index to inspect.
         :param include_loops: True to also count the rows that get played in loops.
         :return: The effective number of rows that gets played in the pattern.
         """
-        if pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         loop_start_row = 0  # used by E6x effect
 
-        data = copy.deepcopy(self.patterns[self.pattern_seq[pattern]].data)
+        data = copy.deepcopy(self.patterns[self.pattern_seq[sequence_idx]].data)
 
         unrolled_data = [[] for _ in range(MODSong.CHANNELS)]
 
@@ -1126,11 +1126,11 @@ class MODSong(Song):
         else:
             return ""
 
-    def get_note(self, pattern_in_song: int, row: int, channel: int) -> Note:
+    def get_note(self, sequence_idx: int, row: int, channel: int) -> Note:
         """
         Returns the note object at the given pattern, row and channel.
         
-        :param pattern_in_song: The pattern index (in the sequence) to read from.
+        :param sequence_idx: The 0-based sequence index to read from.
         :param row: The row index to read from, 0-based.
         :param channel: The channel index to read from, 0-based.
         :return: The note object.
@@ -1141,10 +1141,10 @@ class MODSong(Song):
         if channel < 0 or channel >= MODSong.CHANNELS:
             raise IndexError(f"Invalid channel index {channel} (expected 0-3).")
 
-        if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index in sequence {pattern_in_song} (expected 0-{len(self.pattern_seq)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
-        return self.patterns[self.pattern_seq[pattern_in_song]].data[channel][row]
+        return self.patterns[self.pattern_seq[sequence_idx]].data[channel][row]
     
     '''
     -------------------------------------
