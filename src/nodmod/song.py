@@ -343,7 +343,7 @@ class Song(ABC):
         """
 
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {sequence_idx} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         self.pattern_seq = self.pattern_seq[:sequence_idx + 1]
 
@@ -359,7 +359,7 @@ class Song(ABC):
         :param sequence_idx: The 0-based sequence index to remove.
         """
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {sequence_idx} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         self.pattern_seq = self.pattern_seq[:sequence_idx] + self.pattern_seq[sequence_idx + 1:]
 
@@ -381,7 +381,7 @@ class Song(ABC):
         :param sequence_idx: The 0-based sequence index to keep.
         """
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {sequence_idx} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         self.pattern_seq = [self.pattern_seq[sequence_idx]]
 
@@ -394,7 +394,7 @@ class Song(ABC):
         :return: The new 0-based pattern pool index.
         """
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {sequence_idx} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
         self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[sequence_idx]]))
         new_idx = len(self.patterns) - 1
         seq_pos = sequence_idx + 1 if after else sequence_idx
@@ -409,7 +409,7 @@ class Song(ABC):
         :return: The new 0-based pattern pool index.
         """
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {sequence_idx} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[sequence_idx]]))
         n = len(self.patterns) - 1
@@ -476,6 +476,10 @@ class Song(ABC):
         """
 
         pat = self._get_sequence_pattern(sequence_idx)
+        if channel < 0 or channel >= pat.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{pat.n_channels-1}).")
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
         cur_note = pat.data[channel][row]
         if effect == '':
             effect = self._preserved_effect(cur_note.effect)
@@ -487,6 +491,10 @@ class Song(ABC):
         Clears a single note cell completely.
         """
         pat = self._get_sequence_pattern(sequence_idx)
+        if channel < 0 or channel >= pat.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{pat.n_channels-1}).")
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
         pat.data[channel][row] = type(pat.data[channel][row])()
 
     def clear_row(self, sequence_idx: int, row: int):
@@ -572,8 +580,12 @@ class Song(ABC):
         :return: None.
         """
 
-        self.patterns[self.pattern_seq[sequence_idx]].data[channel][row].effect \
-            = effect
+        pat = self._get_sequence_pattern(sequence_idx)
+        if channel < 0 or channel >= pat.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{pat.n_channels-1}).")
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
+        pat.data[channel][row].effect = effect
 
     @staticmethod
     def note_in_range(note_str: str, lo: str | int, hi: str | int) -> bool:
@@ -760,7 +772,7 @@ class Song(ABC):
 
     def _get_sequence_pattern(self, sequence_idx: int):
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
         return self.patterns[self.pattern_seq[sequence_idx]]
 
     def _preserved_effect(self, effect: str) -> str:
