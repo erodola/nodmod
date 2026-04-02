@@ -30,6 +30,7 @@ class Song(ABC):
     PRESERVED_EFFECT_PREFIXES = frozenset({'B', 'C', 'D', 'E', 'F'})
 
     def __init__(self):
+        """Initialize shared song metadata, pattern storage, and sequence state."""
 
         self.artist = ""
         self.songname = "new song"
@@ -52,13 +53,16 @@ class Song(ABC):
     '''
 
     def set_artist(self, artist_name: str):
+        """Set the song artist metadata string."""
         self.artist = artist_name
 
     def set_songname(self, song_name: str):
+        """Set the song title metadata string."""
         self.songname = song_name
 
     @staticmethod
     def _effect_text(note_or_effect) -> str:
+        """Normalize a note or raw effect value into uppercase effect text."""
         if hasattr(note_or_effect, 'effect'):
             effect = note_or_effect.effect
         elif note_or_effect is None:
@@ -69,6 +73,15 @@ class Song(ABC):
 
     @staticmethod
     def parse_effect(effect_str) -> tuple[str, int | None]:
+        """Parse textual tracker effect notation into a command prefix and numeric value.
+
+        Standard effects such as ``F06`` are returned as ``('F', 0x06)``.
+        Extended effects with embedded subcommands such as ``E6F`` or ``X12``
+        keep the two-character prefix so callers can distinguish the subcommand.
+
+        :param effect_str: A note object or effect string such as ``F06`` or ``E6F``.
+        :return: A tuple ``(command, value)``. Empty effects return ``('', None)``.
+        """
         effect = Song._effect_text(effect_str)
         if effect == '':
             return '', None
@@ -82,6 +95,14 @@ class Song(ABC):
 
     @staticmethod
     def get_bpm(note_or_effect) -> int | None:
+        """Return the BPM encoded by a classic Fxx effect, if present.
+
+        In classic tracker tempo semantics, ``F20`` and above represent BPM,
+        while lower non-zero values represent speed instead.
+
+        :param note_or_effect: A note object or effect string.
+        :return: The BPM value, or ``None`` if the input does not encode BPM.
+        """
         effect_name, value = Song.parse_effect(note_or_effect)
         if effect_name == 'F' and value is not None and value >= 32:
             return value
@@ -89,6 +110,14 @@ class Song(ABC):
 
     @staticmethod
     def get_ticks_per_row(note_or_effect) -> int | None:
+        """Return the speed encoded by a classic Fxx effect, if present.
+
+        In classic tracker tempo semantics, ``F01`` through ``F1F`` represent
+        ticks-per-row, while larger values represent BPM instead.
+
+        :param note_or_effect: A note object or effect string.
+        :return: The ticks-per-row value, or ``None`` if the input does not encode speed.
+        """
         effect_name, value = Song.parse_effect(note_or_effect)
         if effect_name == 'F' and value is not None and 1 <= value <= 31:
             return value
@@ -143,6 +172,7 @@ class Song(ABC):
 
     @staticmethod
     def artist_songname_from_filename(filename: str):
+        """Split a filename of the form 'artist - title.ext' into metadata fields."""
         filename = os.path.basename(filename)
         parts = filename.split(' - ')
         assert len(parts) <= 2
@@ -434,7 +464,13 @@ class Song(ABC):
 
     def is_pattern_empty(self, pattern: int) -> bool:
         """
-        Returns True if every note in the given sequence pattern is empty.
+        Return True if every note in the referenced sequence pattern is empty.
+
+        This checks the concrete pattern reached through the song sequence, not a
+        raw pattern-pool index.
+
+        :param pattern: The 0-based sequence index to inspect.
+        :return: True if every note in that sequence entry is empty.
         """
         pat = self._get_sequence_pattern(pattern)
         for channel in pat.data:
@@ -445,7 +481,12 @@ class Song(ABC):
 
     def get_used_patterns(self) -> list[int]:
         """
-        Returns unique pattern pool indices referenced by the song sequence, preserving order.
+        Return unique pattern-pool indices referenced by the song sequence.
+
+        The result preserves first-use order, which is often more useful than a
+        numerically sorted list when inspecting or rewriting sequences.
+
+        :return: Pattern-pool indices referenced by ``pattern_seq`` in first-use order.
         """
         used = []
         seen = set()
@@ -488,7 +529,14 @@ class Song(ABC):
 
     def clear_note(self, sequence_idx: int, channel: int, row: int):
         """
-        Clears a single note cell completely.
+        Clear a single note cell completely.
+
+        The replacement note is created using the existing note class for that
+        pattern, so XM and S3M-specific note fields are reset correctly.
+
+        :param sequence_idx: The 0-based sequence index to modify.
+        :param channel: The 0-based channel index to clear.
+        :param row: The 0-based row index to clear.
         """
         pat = self._get_sequence_pattern(sequence_idx)
         if channel < 0 or channel >= pat.n_channels:
@@ -499,7 +547,12 @@ class Song(ABC):
 
     def clear_row(self, sequence_idx: int, row: int):
         """
-        Clears a full row across all channels in a sequence pattern.
+        Clear a full row across all channels in a sequence pattern.
+
+        Each cell is reset using the concrete note type stored by that pattern.
+
+        :param sequence_idx: The 0-based sequence index to modify.
+        :param row: The 0-based row index to clear.
         """
         pat = self._get_sequence_pattern(sequence_idx)
         if row < 0 or row >= pat.n_rows:
@@ -509,7 +562,15 @@ class Song(ABC):
 
     def copy_row(self, src_sequence_idx: int, src_row: int, dst_sequence_idx: int, dst_row: int):
         """
-        Copies a full row between sequence patterns.
+        Copy a full row between sequence patterns.
+
+        Destination cells are cleared first and then overwritten for the channel
+        range common to both source and destination patterns.
+
+        :param src_sequence_idx: Source 0-based sequence index.
+        :param src_row: Source 0-based row index.
+        :param dst_sequence_idx: Destination 0-based sequence index.
+        :param dst_row: Destination 0-based row index.
         """
         src_pat = self._get_sequence_pattern(src_sequence_idx)
         dst_pat = self._get_sequence_pattern(dst_sequence_idx)
@@ -524,8 +585,14 @@ class Song(ABC):
 
     def shift_pattern(self, sequence_idx: int, delta_rows: int):
         """
-        Shifts all rows in a sequence pattern using clipping semantics.
-        Positive values shift downward, negative values shift upward.
+        Shift all rows in a sequence pattern using clipping semantics.
+
+        Positive values shift notes downward, negative values shift them upward.
+        Notes pushed outside the pattern bounds are discarded, and newly exposed
+        rows are filled with empty notes of the appropriate concrete note type.
+
+        :param sequence_idx: The 0-based sequence index to modify.
+        :param delta_rows: Row offset to apply to every note in the pattern.
         """
         pat = self._get_sequence_pattern(sequence_idx)
         for channel in range(pat.n_channels):
@@ -590,7 +657,15 @@ class Song(ABC):
     @staticmethod
     def note_in_range(note_str: str, lo: str | int, hi: str | int) -> bool:
         """
-        Returns True if note_str falls within the inclusive note range.
+        Return True if a note falls within an inclusive note range.
+
+        All inputs may be either tracker note strings such as ``C-4`` or raw
+        numeric note indices.
+
+        :param note_str: The note to test.
+        :param lo: Lower inclusive bound.
+        :param hi: Upper inclusive bound.
+        :return: True if ``note_str`` is within ``[lo, hi]``.
         """
         note_idx = Song.note_to_index(note_str)
         lo_idx = Song.note_to_index(lo)
@@ -610,42 +685,50 @@ class Song(ABC):
         return Song.index_to_note(new_index)
 
     def set_bpm(self, pattern: int, channel: int, row: int, bpm: int):
+        """Write a classic Fxx tempo command at the requested pattern location."""
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
         self.set_effect(pattern, channel, row, f"F{bpm:02X}")
 
     def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
+        """Write a classic Fxx speed command at the requested pattern location."""
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
         self.set_effect(pattern, channel, row, f"F{ticks:02X}")
 
     def set_arpeggio(self, pattern: int, channel: int, row: int, note1: int, note2: int):
+        """Write a 0xy arpeggio effect using two semitone offsets."""
         if note1 < 0 or note1 > 15 or note2 < 0 or note2 > 15:
             raise ValueError("Arpeggio offsets must be in the range 0-15.")
         self.set_effect(pattern, channel, row, f"0{note1:X}{note2:X}")
 
     def set_panning(self, pattern: int, channel: int, row: int, panning: int):
+        """Write an 8xx panning command using a 0-255 position."""
         if panning < 0 or panning > 255:
             raise ValueError(f"Invalid panning {panning} (expected 0-255).")
         self.set_effect(pattern, channel, row, f"8{panning:02X}")
 
     def set_sample_offset(self, pattern: int, channel: int, row: int, offset: int):
+        """Write a 9xx sample-offset command."""
         if offset < 0 or offset > 255:
             raise ValueError(f"Invalid sample offset {offset} (expected 0-255).")
         self.set_effect(pattern, channel, row, f"9{offset:02X}")
 
     def set_position_jump(self, pattern: int, channel: int, row: int, pos: int):
+        """Write a Bxx order jump command."""
         if pos < 0 or pos > 255:
             raise ValueError(f"Invalid position jump {pos} (expected 0-255).")
         self.set_effect(pattern, channel, row, f"B{pos:02X}")
 
     def set_pattern_break(self, pattern: int, channel: int, row: int, row_target: int):
+        """Write a Dxx pattern-break command using decimal row notation."""
         if row_target < 0 or row_target > 99:
             raise ValueError(f"Invalid pattern break row {row_target} (expected 0-99).")
         tens, ones = divmod(row_target, 10)
         self.set_effect(pattern, channel, row, f"D{tens:X}{ones:X}")
 
     def set_portamento(self, pattern: int, channel: int, row: int, slide: int):
+        """Write an up or down portamento effect depending on the slide sign."""
         if slide < -255 or slide > 255:
             raise ValueError(f"Invalid portamento slide {slide} (expected -255 to 255).")
         if slide > 0:
@@ -654,11 +737,13 @@ class Song(ABC):
             self.set_effect(pattern, channel, row, f"2{(-slide):02X}")
 
     def set_tone_portamento(self, pattern: int, channel: int, row: int, speed: int):
+        """Write a 3xx tone-portamento command."""
         if speed < 0 or speed > 255:
             raise ValueError(f"Invalid tone portamento speed {speed} (expected 0-255).")
         self.set_effect(pattern, channel, row, f"3{speed:02X}")
 
     def set_tone_portamento_slide(self, pattern: int, channel: int, row: int, slide: int):
+        """Write a 5xx tone-portamento-plus-volume-slide command."""
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid tone portamento slide {slide} (expected -15 to 15).")
         effect_value = 0
@@ -669,11 +754,13 @@ class Song(ABC):
         self.set_effect(pattern, channel, row, f"5{effect_value:02X}")
 
     def set_volume(self, pattern: int, channel: int, row: int, volume: int):
+        """Write a Cxx set-volume command."""
         if volume < 0 or volume > 64:
             raise ValueError(f"Invalid volume {volume} (expected 0-64).")
         self.set_effect(pattern, channel, row, f"C{volume:02X}")
 
     def set_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
+        """Write an Axy volume-slide command."""
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid volume slide {slide} (expected -15 to 15).")
         effect_value = 0
@@ -684,6 +771,7 @@ class Song(ABC):
         self.set_effect(pattern, channel, row, f"A{effect_value:02X}")
 
     def set_vibrato(self, pattern: int, channel: int, row: int, speed: int, depth: int):
+        """Write a 4xy vibrato command."""
         if speed < 0 or speed > 15:
             raise ValueError(f"Invalid vibrato speed {speed} (expected 0-15).")
         if depth < 0 or depth > 15:
@@ -691,6 +779,7 @@ class Song(ABC):
         self.set_effect(pattern, channel, row, f"4{(speed << 4) | depth:02X}")
 
     def set_vibrato_slide(self, pattern: int, channel: int, row: int, slide: int):
+        """Write a 6xy vibrato-plus-volume-slide command."""
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid vibrato slide {slide} (expected -15 to 15).")
         effect_value = 0
@@ -701,6 +790,7 @@ class Song(ABC):
         self.set_effect(pattern, channel, row, f"6{effect_value:02X}")
 
     def set_tremolo(self, pattern: int, channel: int, row: int, speed: int, depth: int):
+        """Write a 7xy tremolo command."""
         if speed < 0 or speed > 15:
             raise ValueError(f"Invalid tremolo speed {speed} (expected 0-15).")
         if depth < 0 or depth > 15:
@@ -708,6 +798,7 @@ class Song(ABC):
         self.set_effect(pattern, channel, row, f"7{(speed << 4) | depth:02X}")
 
     def set_fine_portamento(self, pattern: int, channel: int, row: int, slide: int):
+        """Write an E1x or E2x fine-portamento command."""
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid fine portamento {slide} (expected -15 to 15).")
         if slide > 0:
@@ -718,34 +809,41 @@ class Song(ABC):
             self.set_effect(pattern, channel, row, "E10")
 
     def set_glissando(self, pattern: int, channel: int, row: int, on: bool):
+        """Enable or disable glissando control with E3x."""
         self.set_effect(pattern, channel, row, f"E3{1 if on else 0}")
 
     def set_vibrato_waveform(self, pattern: int, channel: int, row: int, wave: int):
+        """Select the vibrato waveform using E4x."""
         if wave < 0 or wave > 7:
             raise ValueError(f"Invalid vibrato waveform {wave} (expected 0-7).")
         self.set_effect(pattern, channel, row, f"E4{wave:X}")
 
     def set_finetune(self, pattern: int, channel: int, row: int, finetune: int):
+        """Write an E5x finetune command."""
         if finetune < 0 or finetune > 15:
             raise ValueError(f"Invalid finetune {finetune} (expected 0-15).")
         self.set_effect(pattern, channel, row, f"E5{finetune:X}")
 
     def set_pattern_loop(self, pattern: int, channel: int, row: int, count: int):
+        """Write an E6x pattern-loop command."""
         if count < 0 or count > 15:
             raise ValueError(f"Invalid pattern loop count {count} (expected 0-15).")
         self.set_effect(pattern, channel, row, f"E6{count:X}")
 
     def set_tremolo_waveform(self, pattern: int, channel: int, row: int, wave: int):
+        """Select the tremolo waveform using E7x."""
         if wave < 0 or wave > 7:
             raise ValueError(f"Invalid tremolo waveform {wave} (expected 0-7).")
         self.set_effect(pattern, channel, row, f"E7{wave:X}")
 
     def set_retrigger(self, pattern: int, channel: int, row: int, interval: int):
+        """Write an E9x retrigger-note command."""
         if interval < 0 or interval > 15:
             raise ValueError(f"Invalid retrigger interval {interval} (expected 0-15).")
         self.set_effect(pattern, channel, row, f"E9{interval:X}")
 
     def set_fine_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
+        """Write an EAx or EBx fine-volume-slide command."""
         if slide < -15 or slide > 15:
             raise ValueError(f"Invalid fine volume slide {slide} (expected -15 to 15).")
         if slide > 0:
@@ -756,26 +854,35 @@ class Song(ABC):
             self.set_effect(pattern, channel, row, "EA0")
 
     def set_note_cut(self, pattern: int, channel: int, row: int, tick: int):
+        """Write an ECx note-cut command."""
         if tick < 0 or tick > 15:
             raise ValueError(f"Invalid note cut tick {tick} (expected 0-15).")
         self.set_effect(pattern, channel, row, f"EC{tick:X}")
 
     def set_note_delay(self, pattern: int, channel: int, row: int, tick: int):
+        """Write an EDx note-delay command."""
         if tick < 0 or tick > 15:
             raise ValueError(f"Invalid note delay tick {tick} (expected 0-15).")
         self.set_effect(pattern, channel, row, f"ED{tick:X}")
 
     def set_pattern_delay(self, pattern: int, channel: int, row: int, rows: int):
+        """Write an EEx pattern-delay command."""
         if rows < 0 or rows > 15:
             raise ValueError(f"Invalid pattern delay {rows} (expected 0-15).")
         self.set_effect(pattern, channel, row, f"EE{rows:X}")
 
     def _get_sequence_pattern(self, sequence_idx: int):
+        """Return the concrete pattern referenced by a sequence position.
+
+        :param sequence_idx: 0-based index into ``pattern_seq``.
+        :return: The concrete pattern object referenced by that sequence entry.
+        """
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
         return self.patterns[self.pattern_seq[sequence_idx]]
 
     def _preserved_effect(self, effect: str) -> str:
+        """Return structural effects that should survive note overwrite operations."""
         effect = self._effect_text(effect)
         if effect and effect[0] in self.PRESERVED_EFFECT_PREFIXES:
             return effect

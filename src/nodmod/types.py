@@ -9,7 +9,7 @@ This module contains all the data classes used across different tracker formats:
 
 import array
 
-__all__ = ['Pattern', 'Sample', 'XMSample', 'EnvelopePoint', 'Instrument', 'Note', 'MODNote', 'XMNote']
+__all__ = ['Pattern', 'Sample', 'XMSample', 'S3MSample', 'EnvelopePoint', 'Instrument', 'Note', 'MODNote', 'XMNote', 'S3MNote']
 
 
 class Note:
@@ -20,6 +20,7 @@ class Note:
     """
 
     def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = ''):
+        """Create a basic tracker note with sample/instrument, pitch, and effect."""
 
         # note that for mod files, instrument and sample are synonymous
         self.instrument_idx = instrument_idx
@@ -28,6 +29,7 @@ class Note:
         self.effect = effect
 
     def __repr__(self):
+        """Return a compact tracker-style textual representation of the note."""
         s = ''
         if self.period == '':
             s += '--- '
@@ -44,6 +46,7 @@ class Note:
         return s
     
     def is_empty(self) -> bool:
+        """Return True if the note contains no pitch, instrument, or effect."""
         return self.instrument_idx == 0 and self.period == '' and self.effect == ''
 
 
@@ -72,6 +75,19 @@ class XMNote(Note):
 
     def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = '',
                  vol_cmd: str = '', vol_val: int = -1):
+        """Create an XM note with an optional volume-column command.
+
+        XM stores note effects in two places: the main effect column and the
+        dedicated volume column. ``vol_cmd`` should be one of the supported XM
+        volume commands such as ``'v'`` or ``'p'``; ``vol_val`` stores the
+        command parameter and defaults to ``-1`` when no volume-column data is set.
+
+        :param instrument_idx: 1-based instrument index, or 0 for none.
+        :param period: Note text such as ``C-5`` or ``off``.
+        :param effect: Main effect-column text.
+        :param vol_cmd: XM volume-column command, or ``''`` for none.
+        :param vol_val: XM volume-column value, or ``-1`` for none.
+        """
         super().__init__(instrument_idx, period, effect)
         
         # XM-specific: volume column command and value
@@ -81,6 +97,7 @@ class XMNote(Note):
         self.vol_val = vol_val
 
     def __repr__(self):
+        """Return a compact textual representation including the XM volume column."""
         s = ''
         # Period
         if self.period == '':
@@ -107,8 +124,57 @@ class XMNote(Note):
         return s
     
     def is_empty(self) -> bool:
+        """Return True if the XM note has no note, instrument, volume, or effect data."""
         return self.instrument_idx == 0 and self.period == '' and \
                self.effect == '' and self.vol_cmd == ''
+
+
+class S3MNote(Note):
+    """
+    Note class for S3M files.
+    S3M notes add a simple volume column without XM's extra volume commands.
+    """
+
+    def __init__(self, instrument_idx: int = 0, period: str = '', effect: str = '', volume: int = -1):
+        """Create an S3M note with an optional 0-64 volume-column value.
+
+        S3M has a simple numeric volume column rather than XM's extra volume
+        command language. A negative value indicates that the volume column is empty.
+
+        :param instrument_idx: 1-based sample index, or 0 for none.
+        :param period: Note text such as ``C-5`` or ``off``.
+        :param effect: Main effect-column text.
+        :param volume: Volume-column value in ``0..64``, or ``-1`` for none.
+        """
+        super().__init__(instrument_idx, period, effect)
+        self.volume = volume
+
+    def __repr__(self):
+        """Return a compact textual representation including the S3M volume column."""
+        s = ''
+        if self.period == '':
+            s += '--- '
+        elif self.period == 'off':
+            s += '=== '
+        else:
+            s += self.period + ' '
+        if self.instrument_idx == 0:
+            s += '-- '
+        else:
+            s += f"{self.instrument_idx:02d} "
+        if self.volume < 0:
+            s += '-- '
+        else:
+            s += f"v{self.volume:02d} "
+        if self.effect == '':
+            s += '---'
+        else:
+            s += self.effect
+        return s
+
+    def is_empty(self) -> bool:
+        """Return True if the S3M note has no note, instrument, volume, or effect data."""
+        return self.instrument_idx == 0 and self.period == '' and self.effect == '' and self.volume < 0
 
 
 class Pattern:
@@ -118,6 +184,7 @@ class Pattern:
     """
 
     def __init__(self, n_rows: int, n_channels: int):
+        """Create a pattern grid with the requested row and channel dimensions."""
         self.n_rows = n_rows
         self.n_channels = n_channels
 
@@ -125,9 +192,11 @@ class Pattern:
         self.data = [[Note() for _ in range(n_rows)] for _ in range(n_channels)]
 
     def __len__(self) -> int:
+        """Return the number of rows in the pattern."""
         return self.n_rows
 
     def __repr__(self):
+        """Render the pattern as tracker-style text, one row per line."""
         s = ''
         for row in range(self.n_rows):
             for channel in range(self.n_channels):
@@ -150,6 +219,7 @@ class Sample:
     LOOP_PINGPONG = 2
 
     def __init__(self):
+        """Create an empty sample with MOD-compatible defaults."""
         self.name = ""
 
         # MOD sample attributes
@@ -179,6 +249,7 @@ class XMSample(Sample):
     """
 
     def __init__(self):
+        """Create an XM sample with panning, relative-note, and loop metadata."""
         super().__init__()
         
         # Override finetune semantics: XM uses signed -128 to +127 (±127 = one half-tone)
@@ -198,9 +269,32 @@ class XMSample(Sample):
         self.waveform = array.array('b')
 
 
+class S3MSample(Sample):
+    """
+    Sample class for S3M PCM instruments.
+    """
+
+    def __init__(self):
+        """Create an S3M PCM sample/instrument record with serialization metadata."""
+        super().__init__()
+        self.instrument_type = 0
+        self.filename = ""
+        self.c2spd = 8363
+        self.pack = 0
+        self.flags = 0
+        self.is_16bit = False
+        self.is_stereo = False
+        self.dsk = 0
+        self.sample_offset = 0
+        self._reserved_byte = 0
+        self._internal: bytes = b'\x00' * 12
+        self._signature = "SCRS"
+
+
 class EnvelopePoint:
     """A single point in a volume or panning envelope."""
     def __init__(self, frame: int = 0, value: int = 0):
+        """Create an envelope point at the given frame and value."""
         self.frame = frame  # X-coordinate (0-65535, but FT2 only supports 0-255)
         self.value = value  # Y-coordinate (0-64)
 
@@ -219,6 +313,7 @@ class Instrument:
     """
 
     def __init__(self):
+        """Create an empty XM instrument with default envelopes and playback settings."""
         self.name = ""
         
         # --- Internal fields for byte-perfect round-trip (users can ignore these) ---
@@ -269,8 +364,13 @@ class Instrument:
 
     def set_sample_map(self, map96: list[int]):
         """
-        Sets the public 96-entry sample map using 1-based sample indices.
-        Each value must be in [1, n_samples].
+        Set the public 96-entry note-to-sample map using 1-based sample indices.
+
+        The map is indexed by note number ``0..95`` (``C-1`` through ``B-8``).
+        Values passed to this method are public 1-based sample indices; the
+        instrument converts them internally to XM's stored 0-based representation.
+
+        :param map96: A 96-entry list of 1-based sample indices.
         """
         if len(map96) != 96:
             raise ValueError(f"Sample map must have 96 entries (got {len(map96)}).")
@@ -287,7 +387,9 @@ class Instrument:
 
     def get_sample_map(self) -> list[int]:
         """
-        Returns the public 96-entry sample map using 1-based sample indices.
+        Return the public 96-entry note-to-sample map using 1-based sample indices.
+
+        :return: A 96-entry list of 1-based sample indices, or an empty list if no map is configured.
         """
         if not self.sample_map:
             return []
@@ -295,16 +397,24 @@ class Instrument:
 
     @staticmethod
     def _note_str_to_idx(note: str | int) -> int:
+        """Convert a note name or numeric note index into a 0-based note index."""
         from .song import Song
 
         return Song.note_to_index(note)
 
     def clear_sample_map(self) -> None:
+        """Clear the public note-to-sample mapping for the instrument."""
         self.sample_map = []
 
     def set_sample_for_note(self, note: str | int, sample_idx: int):
         """
-        Sets the public 1-based sample index for a given note index 0-95.
+        Set the sample mapped to one note in the instrument.
+
+        ``note`` may be either a tracker note string such as ``C-4`` or a raw
+        note index in ``0..95``. ``sample_idx`` uses the public 1-based sample numbering.
+
+        :param note: Note string or numeric note index.
+        :param sample_idx: 1-based sample index within this instrument.
         """
         note_idx = self._note_str_to_idx(note)
         if note_idx < 0 or note_idx >= 96:
@@ -319,6 +429,7 @@ class Instrument:
         self.sample_map[note_idx] = sample_idx - 1
 
     def _normalize_envelope_points(self, points: list[EnvelopePoint | tuple[int, int]]) -> list[EnvelopePoint]:
+        """Convert mixed envelope-point input into copied EnvelopePoint instances."""
         norm: list[EnvelopePoint] = []
         for p in points:
             if isinstance(p, EnvelopePoint):
@@ -338,7 +449,20 @@ class Instrument:
         loop_enabled: bool | None = None,
         raw_type: int | None = None,
     ):
-        """Set the volume envelope points and flags."""
+        """Set the volume envelope points and control flags.
+
+        The convenience arguments ``enabled``, ``sustain_enabled``, and
+        ``loop_enabled`` are used to derive the XM envelope type bits unless
+        ``raw_type`` is provided explicitly, in which case the raw bitfield wins.
+
+        :param points: Envelope points as ``EnvelopePoint`` objects or ``(frame, value)`` tuples.
+        :param sustain: Sustain-point index, or ``None`` for no sustain point.
+        :param loop: Optional ``(start, end)`` loop-point indices.
+        :param enabled: Whether the envelope should be marked enabled.
+        :param sustain_enabled: Explicit sustain-flag override.
+        :param loop_enabled: Explicit loop-flag override.
+        :param raw_type: Optional raw XM envelope-type bitfield.
+        """
         self.volume_envelope = self._normalize_envelope_points(points)
         self.volume_sustain_point = sustain if sustain is not None else 0
         if loop is not None:
@@ -373,7 +497,20 @@ class Instrument:
         loop_enabled: bool | None = None,
         raw_type: int | None = None,
     ):
-        """Set the panning envelope points and flags."""
+        """Set the panning envelope points and control flags.
+
+        The convenience arguments ``enabled``, ``sustain_enabled``, and
+        ``loop_enabled`` are used to derive the XM envelope type bits unless
+        ``raw_type`` is provided explicitly, in which case the raw bitfield wins.
+
+        :param points: Envelope points as ``EnvelopePoint`` objects or ``(frame, value)`` tuples.
+        :param sustain: Sustain-point index, or ``None`` for no sustain point.
+        :param loop: Optional ``(start, end)`` loop-point indices.
+        :param enabled: Whether the envelope should be marked enabled.
+        :param sustain_enabled: Explicit sustain-flag override.
+        :param loop_enabled: Explicit loop-flag override.
+        :param raw_type: Optional raw XM envelope-type bitfield.
+        """
         self.panning_envelope = self._normalize_envelope_points(points)
         self.panning_sustain_point = sustain if sustain is not None else 0
         if loop is not None:
@@ -400,6 +537,7 @@ class Instrument:
 
 
     def _validate_envelope(self, points: list[EnvelopePoint], sustain: int, loop_start: int, loop_end: int, name: str) -> None:
+        """Validate one XM envelope against point-count and index constraints."""
         if len(points) > 12:
             raise ValueError(f"{name} envelope has {len(points)} points (XM supports up to 12).")
         last_frame = -1
@@ -421,11 +559,14 @@ class Instrument:
                 raise ValueError(f"{name} loop start {loop_start} greater than loop end {loop_end}.")
 
     def validate_volume_envelope(self) -> None:
+        """Validate the instrument's volume envelope configuration."""
         self._validate_envelope(self.volume_envelope, self.volume_sustain_point, self.volume_loop_start, self.volume_loop_end, "volume")
 
     def validate_panning_envelope(self) -> None:
+        """Validate the instrument's panning envelope configuration."""
         self._validate_envelope(self.panning_envelope, self.panning_sustain_point, self.panning_loop_start, self.panning_loop_end, "panning")
 
     def validate_envelopes(self) -> None:
+        """Validate both instrument envelopes."""
         self.validate_volume_envelope()
         self.validate_panning_envelope()

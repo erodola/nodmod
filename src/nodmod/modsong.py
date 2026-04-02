@@ -1,3 +1,5 @@
+"""Support for loading, editing, and saving classic 4-channel MOD modules."""
+
 from __future__ import annotations
 from nodmod import Song
 from nodmod import Sample
@@ -11,6 +13,7 @@ import struct
 
 
 class MODSong(Song):
+
 
     ROWS = 64
     CHANNELS = 4
@@ -41,6 +44,7 @@ class MODSong(Song):
 
     @property
     def file_extension(self) -> str:
+        """File extension used when saving MOD songs."""
         return 'mod'
 
     def __init__(self):
@@ -59,16 +63,19 @@ class MODSong(Song):
         self.n_actual_samples = 0  # The number of non-empty samples present in the song.
 
     def _update_n_actual_samples(self) -> None:
+        """Refresh the cached count of non-empty sample slots."""
         self.n_actual_samples = sum(1 for sample in self.samples if len(sample.waveform) > 0)
 
     @staticmethod
     def period_to_note(period_value: int) -> str:
+        """Convert a raw MOD period value into note text."""
         if period_value not in MODSong.PERIOD_TABLE:
             raise ValueError(f"Unknown period value {period_value}.")
         return MODSong.PERIOD_TABLE[period_value]
 
     @staticmethod
     def note_to_period(note_str: str) -> int:
+        """Convert note text into a raw MOD period value."""
         if note_str not in MODSong.INV_PERIOD_TABLE:
             raise ValueError(f"Unknown MOD note {note_str!r}.")
         return MODSong.INV_PERIOD_TABLE[note_str]
@@ -679,13 +686,15 @@ class MODSong(Song):
     
     def _get_effective_sample_rate(self, smp: Sample, period: str = "C-5") -> int:
         """
-        Returns the effective sample rate of the given sample based on its finetune value
-        and the reference period.
+        Return the effective playback sample rate of a MOD sample.
 
-        For no finetune, returns 8287 Hz at reference period C-5.
+        MOD stores finetune as a 4-bit value that shifts pitch in steps of one
+        eighth of a semitone. This helper converts that tuning plus a reference
+        note such as ``C-5`` into the effective WAV sample rate needed to hear
+        the sample at that pitch.
 
         :param smp: The sample object.
-        :param period: The period to use as reference pitch (default "C-5").
+        :param period: Note text used as the playback reference pitch.
         :return: The effective sample rate in Hz.
         """
         # calculate the base frequency for the reference period.
@@ -708,10 +717,12 @@ class MODSong(Song):
         return effective_sample_rate
     
     def set_sample_name(self, sample_idx: int, name: str) -> None:
+        """Set the name of one MOD sample slot."""
         smp = self.get_sample(sample_idx)
         smp.name = name
 
     def set_sample_volume(self, sample_idx: int, volume: int) -> None:
+        """Set the volume of one MOD sample slot."""
         if volume < 0 or volume > 64:
             raise ValueError(f"Invalid volume {volume} (expected 0-64).")
         smp = self.get_sample(sample_idx)
@@ -729,12 +740,20 @@ class MODSong(Song):
         smp.finetune = finetune
 
     def set_sample_loop(self, sample_idx: int, start: int, length: int) -> None:
+        """Set the loop start and length for one MOD sample slot."""
         smp = self.get_sample(sample_idx)
         smp.repeat_point = max(0, start)
         smp.repeat_len = max(0, length)
 
 
     def validate_sample_loop(self, sample_idx: int) -> None:
+        """Validate that a MOD sample loop stays within waveform bounds.
+
+        MOD loop values are expressed in samples, not bytes. A loop length of 0
+        or 1 is treated as effectively disabled and therefore passes validation.
+
+        :param sample_idx: The 1-based sample index to validate.
+        """
         smp = self.get_sample(sample_idx)
         n = len(smp.waveform)
         if smp.repeat_len <= 1:
@@ -747,12 +766,13 @@ class MODSong(Song):
 
     def get_sample_duration(self, sample_idx: int, period: str = "C-5") -> float:
         """
-        Returns the duration of the sample at the given index in seconds.
-        The duration is computed based on the effective sample rate, which depends on the finetune value
-        and the reference period.
+        Return the playback duration of a MOD sample in seconds.
+
+        Duration depends on the effective playback rate, so the same waveform can
+        produce a different result for a different reference note or finetune.
 
         :param sample_idx: The sample index to query, 1 to 31.
-        :param period: The period to use as reference pitch (default "C-5").
+        :param period: Note text used as the playback reference pitch.
         :return: The sample duration in seconds.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
@@ -770,15 +790,16 @@ class MODSong(Song):
 
     def save_sample(self, sample_idx: int, fname: str, period: str = "C-5", force_sample_rate: int = None):
         """
-        Saves the sample at the given index as a WAV file.
+        Save one MOD sample as a WAV file.
 
-        The WAV file will be saved at the standard MOD sample rate, adjusted for finetune,
-        unless force_sample_rate is specified.
+        By default the exported WAV uses the effective playback sample rate implied
+        by the MOD finetune and the chosen reference pitch. ``force_sample_rate``
+        can be used to resample the exported audio to a fixed output rate instead.
 
         :param sample_idx: The sample index to save, 1 to 31.
         :param fname: The complete file path to the output .wav file.
-        :param period: The period to use as reference pitch (default "C-5").
-        :param force_sample_rate: The sample rate to use for the output file (default None).
+        :param period: Note text used as the playback reference pitch.
+        :param force_sample_rate: Optional output WAV rate to resample to.
         :return: None.
         """
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
@@ -818,7 +839,11 @@ class MODSong(Song):
 
     def list_samples(self) -> list[Sample]:
         """
-        Returns the list of samples in order (31 slots).
+        Return the fixed 31-slot MOD sample bank.
+
+        Empty sample slots are included in the returned list.
+
+        :return: The ordered list of MOD sample slots.
         """
         return self.samples
 
@@ -869,8 +894,13 @@ class MODSong(Song):
 
     def copy_samples_from(self, src: 'MODSong', src_sample_indices: list[int]) -> list[int]:
         """
-        Copies multiple samples from another MODSong into this song.
-        Returns the list of destination sample indices.
+        Copy multiple samples from another MOD song.
+
+        Samples are inserted one by one into the next available empty slots.
+
+        :param src: The source MOD song.
+        :param src_sample_indices: 1-based source sample indices to copy.
+        :return: The destination 1-based sample indices in copy order.
         """
         new_indices: list[int] = []
         for idx in src_sample_indices:
@@ -908,6 +938,12 @@ class MODSong(Song):
         self._update_n_actual_samples()
 
     def get_used_samples(self) -> list[int]:
+        """Return sorted sample indices referenced by notes in the song.
+
+        The result is sorted numerically by sample index, not by first-use order.
+
+        :return: Referenced 1-based sample indices.
+        """
         used = set()
         for pattern in self.patterns:
             for channel in pattern.data:
@@ -931,12 +967,14 @@ class MODSong(Song):
 
 
     def add_to_sequence(self, pattern_idx: int, sequence_position: int | None = None) -> None:
+        """Insert a pattern into the MOD order list, enforcing the 128-order limit."""
         if len(self.pattern_seq) + 1 > 128:
             raise ValueError(f"Pattern sequence too long ({len(self.pattern_seq) + 1}). MOD supports up to 128.")
         super().add_to_sequence(pattern_idx, sequence_position)
 
 
     def set_sequence(self, seq: list[int]) -> None:
+        """Replace the MOD order list, enforcing the 128-order limit."""
         if len(seq) > 128:
             raise ValueError(f"Pattern sequence too long ({len(seq)}). MOD supports up to 128.")
         super().set_sequence(seq)
@@ -979,7 +1017,7 @@ class MODSong(Song):
               It's not so trivial, because of position jumps effects (Dxx) and such.
 
         :param sequence_idx: The 0-based sequence index to inspect.
-        :param include_loops: True to also count the rows that get played in loops.
+        :param include_loops: True to count rows replayed by ``E6x`` pattern loops.
         :return: The effective number of rows that gets played in the pattern.
         """
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
@@ -1028,11 +1066,13 @@ class MODSong(Song):
     '''
 
     def add_channel(self, count: int = 1) -> None:
+        """Reject channel growth because standard MOD has a fixed 4-channel layout."""
         if count <= 0:
             raise ValueError(f"Invalid channel count {count} (expected >=1).")
         raise NotImplementedError("MOD format has fixed 4 channels; cannot add channels.")
 
     def remove_channel(self, channel: int) -> None:
+        """Reject channel removal because standard MOD has a fixed 4-channel layout."""
         raise NotImplementedError("MOD format has fixed 4 channels; cannot remove channels.")
 
     def clear_channel(self, channel: int):

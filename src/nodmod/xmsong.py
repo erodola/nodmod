@@ -1,3 +1,5 @@
+"""Support for loading, editing, and saving FastTracker 2 XM modules."""
+
 import array
 import copy
 import shutil
@@ -27,6 +29,7 @@ class XMSong(Song):
     
     @property
     def file_extension(self) -> str:
+        """File extension used when saving XM songs."""
         return 'xm'
     
     @property
@@ -36,10 +39,12 @@ class XMSong(Song):
 
     @property
     def n_channels(self) -> int:
+        """Number of channels exposed by the song."""
         return self._n_channels
 
     @n_channels.setter
     def n_channels(self, n: int) -> None:
+        """Resize all patterns to the requested XM channel count."""
         if n < 1 or n > 32:
             raise ValueError(f"Invalid channel count {n} (expected 1-32).")
         self._n_channels = n
@@ -52,9 +57,11 @@ class XMSong(Song):
             pat.n_channels = n
     
     def _note_str_to_idx(self, note: str | int) -> int:
+        """Convert a note string or index into a normalized numeric note index."""
         return Song.note_to_index(note)
 
     def __init__(self):
+        """Create an empty XM song with one default pattern and XM header defaults."""
         super().__init__()
         
         # XM-specific: instruments list (notes reference instruments, not samples directly)
@@ -72,16 +79,32 @@ class XMSong(Song):
         self.add_pattern()
 
     def set_default_speed(self, speed: int) -> None:
+        """Set the XM default speed in ticks per row.
+
+        This is the value used at song start until a later ``Fxx`` effect changes it.
+
+        :param speed: Default ticks-per-row value in ``1..31``.
+        """
         if speed < 1 or speed > 31:
             raise ValueError(f"Invalid default speed {speed} (expected 1-31).")
         self.default_speed = speed
 
     def set_default_tempo(self, bpm: int) -> None:
+        """Set the XM default tempo in BPM.
+
+        This is the starting BPM used until a later ``Fxx`` effect changes it.
+
+        :param bpm: Default BPM value in ``32..255``.
+        """
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid default tempo {bpm} (expected 32-255).")
         self.default_tempo = bpm
 
     def set_song_restart(self, song_restart_position: int) -> None:
+        """Set the XM restart position used when the order list loops.
+
+        :param song_restart_position: 0-based sequence position used as the restart point.
+        """
         if song_restart_position < 0 or song_restart_position >= len(self.pattern_seq):
             raise IndexError(
                 f"Invalid song restart position {song_restart_position} (expected 0-{len(self.pattern_seq)-1})."
@@ -89,12 +112,25 @@ class XMSong(Song):
         self.song_restart = song_restart_position
 
     def set_linear_frequency(self, on: bool) -> None:
+        """Enable or disable XM linear-frequency mode.
+
+        XM supports two pitch models: Amiga periods and FastTracker 2 linear
+        frequencies. This flag only affects XM playback and serialization.
+
+        :param on: True for linear-frequency mode, False for Amiga mode.
+        """
         if on:
             self.flags |= 0x01
         else:
             self.flags &= ~0x01
 
     def set_n_channels(self, n: int) -> None:
+        """Convenience wrapper around the XM channel-count property.
+
+        Resizing the channel count also resizes every pattern in the song.
+
+        :param n: New XM channel count in ``1..32``.
+        """
         self.n_channels = n
         
     def copy(self) -> 'XMSong':
@@ -1392,7 +1428,10 @@ class XMSong(Song):
         """
         Writes an XM note in the given sequence pattern, channel, and row.
         If no effect is given and the current note already has a speed effect, leaves it unchanged.
-        If vol_cmd and vol_val are omitted, preserves the existing volume column.
+        If ``vol_cmd`` and ``vol_val`` are both omitted, the existing volume column is preserved.
+        XM volume-column commands are format-specific shorthands such as ``'v'``
+        (set volume), ``'d'``/``'c'`` (slides), ``'p'`` (set panning), and ``'g'``
+        (tone portamento).
 
         :param sequence_idx: The 0-based sequence index to write to.
         :param channel: The channel index to write to, 0-based.
@@ -1400,8 +1439,8 @@ class XMSong(Song):
         :param instrument_idx: The 1-based instrument index to write.
         :param period: The note period (pitch) to write, e.g. "C-4".
         :param effect: The note effect, e.g. "ED1".
-        :param vol_cmd: Volume column command (e.g. 'v', 'd', 'c', etc.), or None to keep existing.
-        :param vol_val: Volume column value, or None to keep existing.
+        :param vol_cmd: Volume-column command, or ``None`` to keep the existing command.
+        :param vol_val: Volume-column parameter, or ``None`` to keep the existing value.
         :return: None.
         """
 
@@ -1437,6 +1476,12 @@ class XMSong(Song):
         pat.data[channel][row] = new_note
 
     def add_channel(self, count: int = 1) -> None:
+        """Append one or more channels to every XM pattern.
+
+        New channels are filled with empty ``XMNote`` rows in every existing pattern.
+
+        :param count: Number of channels to add.
+        """
         if count <= 0:
             raise ValueError(f"Invalid channel count {count} (expected >=1).")
         if self.n_channels + count > 32:
@@ -1448,6 +1493,10 @@ class XMSong(Song):
         self._n_channels += count
 
     def remove_channel(self, channel: int) -> None:
+        """Remove one channel from every XM pattern.
+
+        :param channel: 0-based channel index to remove.
+        """
         if self.n_channels <= 1:
             raise ValueError("Cannot remove last channel (XM requires at least 1).")
         if channel < 0 or channel >= self.n_channels:
@@ -1462,6 +1511,8 @@ class XMSong(Song):
         Mutes a specified channel in the entire song while preserving global effects.
         This clears notes, instruments, and channel-specific effects but keeps global effects
         like speed/BPM changes (Fxx), pattern breaks (Bxx), position jumps (Dxx), and extended effects (E**).
+
+        :param channel: The 0-based channel index to mute.
         """
         if channel < 0 or channel >= self.n_channels:
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
@@ -1476,6 +1527,12 @@ class XMSong(Song):
                 pat.data[channel][r] = new_note
 
     def clear_channel(self, channel: int) -> None:
+        """Clear one channel across all patterns.
+
+        Unlike ``mute_channel()``, this also removes structural effects on that channel.
+
+        :param channel: The 0-based channel index to clear.
+        """
         if channel < 0 or channel >= self.n_channels:
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
         for pat in self.patterns:
@@ -1489,7 +1546,7 @@ class XMSong(Song):
         :param sequence_idx: The 0-based sequence index to read from.
         :param row: The row index to read from, 0-based.
         :param channel: The channel index to read from, 0-based.
-        :return: The XMNote object.
+        :return: The ``XMNote`` object stored at that location.
         """
         if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
             raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
