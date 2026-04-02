@@ -359,22 +359,107 @@ class S3MSong(Song):
             print('done.')
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
-        tick_duration = self.get_tick_duration(self.initial_tempo)
-        row_duration = self.initial_speed * tick_duration
         timestamps: list[list[tuple[float, int, int]]] = []
+        speed = self.initial_speed
+        bpm = self.initial_tempo
         elapsed = 0.0
-        for pat_idx in self.pattern_seq:
+        seq_idx = 0
+        start_row = 0
+        self_jump_count = 0
+        self_jump_limit = 5
+
+        while seq_idx < len(self.pattern_seq):
+            pat_idx = self.pattern_seq[seq_idx]
+            if pat_idx < 0 or pat_idx >= len(self.patterns):
+                seq_idx += 1
+                start_row = 0
+                continue
+
             pat = self.patterns[pat_idx]
             pat_rows: list[tuple[float, int, int]] = []
-            for _row in range(pat.n_rows):
+            r = start_row
+            start_row = 0
+
+            while r < pat.n_rows:
+                pending_jump_seq = None
+                pending_break_row = None
+                row_delay = 0
+
+                for channel in range(pat.n_channels):
+                    effect = self._effect_text(pat.data[channel][r].effect)
+                    if effect == '':
+                        continue
+                    if effect.startswith('A') and len(effect) == 3:
+                        value = int(effect[1:], 16)
+                        if value != 0:
+                            speed = value
+                    elif effect.startswith('T') and len(effect) == 3:
+                        value = int(effect[1:], 16)
+                        if value >= 33:
+                            bpm = value
+                    elif effect.startswith('B') and len(effect) == 3:
+                        value = int(effect[1:], 16)
+                        if value < len(self.pattern_seq):
+                            pending_jump_seq = value
+                    elif effect.startswith('C') and len(effect) == 3:
+                        hi = int(effect[1], 16)
+                        lo = int(effect[2], 16)
+                        row_target = hi * 10 + lo
+                        if row_target < pat.n_rows:
+                            pending_break_row = row_target
+                    elif effect.startswith('SE') and len(effect) == 3:
+                        row_delay = max(row_delay, int(effect[2], 16))
+
                 pat_rows.append((elapsed, self.initial_speed, self.initial_tempo))
-                elapsed += row_duration
-            timestamps.append(pat_rows)
+                pat_rows[-1] = (elapsed, speed, bpm)
+                elapsed += (1 + row_delay) * self.get_tick_duration(bpm) * speed
+
+                if pending_jump_seq is not None or pending_break_row is not None:
+                    timestamps.append(pat_rows)
+                    if pending_jump_seq is not None:
+                        if pending_jump_seq == seq_idx:
+                            self_jump_count += 1
+                            if self_jump_count > self_jump_limit:
+                                return timestamps
+                        else:
+                            self_jump_count = 0
+                    if pending_break_row is not None:
+                        start_row = pending_break_row
+                        seq_idx = pending_jump_seq if pending_jump_seq is not None else seq_idx + 1
+                    else:
+                        start_row = 0
+                        seq_idx = pending_jump_seq
+                    break
+
+                r += 1
+            else:
+                timestamps.append(pat_rows)
+                seq_idx += 1
         return timestamps
 
     def get_effective_row_count(self, sequence_idx: int) -> int:
         pat = self._get_sequence_pattern(sequence_idx)
-        return pat.n_rows
+        played_rows = 0
+        for row in range(pat.n_rows):
+            row_delay = 0
+            interrupt = False
+            for channel in range(pat.n_channels):
+                effect = self._effect_text(pat.data[channel][row].effect)
+                if effect == '':
+                    continue
+                if effect.startswith('SE') and len(effect) == 3:
+                    row_delay = max(row_delay, int(effect[2], 16))
+                if effect.startswith('B') and len(effect) == 3:
+                    interrupt = True
+                if effect.startswith('C') and len(effect) == 3:
+                    hi = int(effect[1], 16)
+                    lo = int(effect[2], 16)
+                    if hi * 10 + lo < pat.n_rows:
+                        interrupt = True
+            played_rows += 1 + row_delay
+            if interrupt:
+                break
+        return played_rows
 
     def add_pattern(self, n_rows: int = ROWS) -> int:
         if n_rows != self.ROWS:
