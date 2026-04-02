@@ -179,9 +179,10 @@ def test_xm_pattern_ops() -> None:
     song = XMSong()
     song.n_channels = 1
 
+    sequence_len = len(song.pattern_seq)
     song.add_pattern(4)
     song.insert_pattern(0, after=False)
-    assert_true(len(song.pattern_seq) == 2, "insert_pattern should insert into sequence")
+    assert_true(len(song.pattern_seq) == sequence_len + 2, "insert_pattern should insert into sequence")
 
     song.set_note(0, 0, 0, 0, "C-4", "")
 
@@ -193,7 +194,7 @@ def test_xm_pattern_ops() -> None:
     assert_true(song.get_note(0, 0, 0).is_empty(), "clear_pattern should empty notes")
 
     song.remove_pattern(0)
-    assert_true(len(song.pattern_seq) == 1, "remove_pattern should remove from sequence")
+    assert_true(len(song.pattern_seq) == sequence_len + 1, "remove_pattern should remove from sequence")
 
     song.add_pattern(4)
     song.set_sequence([1, 0])

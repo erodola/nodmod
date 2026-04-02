@@ -33,6 +33,23 @@ class XMSong(Song):
     def uses_linear_frequency(self) -> bool:
         """True if using linear frequency table, False for Amiga frequency table."""
         return (self.flags & 0x01) == 1
+
+    @property
+    def n_channels(self) -> int:
+        return self._n_channels
+
+    @n_channels.setter
+    def n_channels(self, n: int) -> None:
+        if n < 1 or n > 32:
+            raise ValueError(f"Invalid channel count {n} (expected 1-32).")
+        self._n_channels = n
+        for pat in self.patterns:
+            if pat.n_channels < n:
+                for _ in range(n - pat.n_channels):
+                    pat.data.append([XMNote() for _ in range(pat.n_rows)])
+            elif pat.n_channels > n:
+                pat.data = pat.data[:n]
+            pat.n_channels = n
     
     def _note_str_to_idx(self, note: str | int) -> int:
         return Song.note_to_index(note)
@@ -78,13 +95,7 @@ class XMSong(Song):
             self.flags &= ~0x01
 
     def set_n_channels(self, n: int) -> None:
-        if n < 1 or n > 32:
-            raise ValueError(f"Invalid channel count {n} (expected 1-32).")
-        if n > self.n_channels:
-            self.add_channel(n - self.n_channels)
-            return
-        while self.n_channels > n:
-            self.remove_channel(self.n_channels - 1)
+        self.n_channels = n
         
     def copy(self) -> 'XMSong':
         """
@@ -1434,7 +1445,7 @@ class XMSong(Song):
             for _ in range(count):
                 pat.data.append([XMNote() for _ in range(pat.n_rows)])
             pat.n_channels += count
-        self.n_channels += count
+        self._n_channels += count
 
     def remove_channel(self, channel: int) -> None:
         if self.n_channels <= 1:
@@ -1444,7 +1455,7 @@ class XMSong(Song):
         for pat in self.patterns:
             pat.data.pop(channel)
             pat.n_channels -= 1
-        self.n_channels -= 1
+        self._n_channels -= 1
 
     def mute_channel(self, channel: int) -> None:
         """
