@@ -58,6 +58,47 @@ def test_s3m_sequence_limits() -> None:
     assert_raises_msg(ValueError, "Pattern sequence too long", song.add_pattern)
 
 
+def test_s3m_channel_ops() -> None:
+    song = S3MSong()
+    song.n_channels = 2
+    song.add_channel(1)
+    assert_true(song.n_channels == 3, "S3M add_channel should increase channel count")
+    assert_true(song.patterns[0].n_channels == 3, "S3M pattern channel count should update")
+
+    song.set_note(0, 1, 0, 1, "C-4", volume=20)
+    song.clear_channel(1)
+    assert_true(song.get_note(0, 0, 1).is_empty(), "S3M clear_channel should empty notes")
+
+    song.remove_channel(1)
+    assert_true(song.n_channels == 2, "S3M remove_channel should decrease channel count")
+
+    assert_raises_msg(ValueError, "channel count", song.add_channel, 0)
+    assert_raises_msg(IndexError, "Invalid channel index", song.clear_channel, 9)
+    assert_raises_msg(IndexError, "Invalid channel index", song.remove_channel, 9)
+    song.remove_channel(0)
+    assert_raises_msg(ValueError, "last channel", song.remove_channel, 0)
+
+
+def test_s3m_mute_channel_preserves_global_effects() -> None:
+    song = S3MSong()
+    song.n_channels = 1
+    song.set_effect(0, 0, 0, "A03")
+    song.set_effect(0, 0, 1, "B01")
+    song.set_effect(0, 0, 2, "C12")
+    song.set_effect(0, 0, 3, "T96")
+    song.set_effect(0, 0, 4, "SB2")
+    song.set_effect(0, 0, 5, "SE3")
+    song.set_effect(0, 0, 6, "D0F")
+    song.mute_channel(0)
+    assert_true(song.get_note(0, 0, 0).effect == "A03", "S3M mute_channel should preserve Axx")
+    assert_true(song.get_note(0, 1, 0).effect == "B01", "S3M mute_channel should preserve Bxx")
+    assert_true(song.get_note(0, 2, 0).effect == "C12", "S3M mute_channel should preserve Cxx")
+    assert_true(song.get_note(0, 3, 0).effect == "T96", "S3M mute_channel should preserve Txx")
+    assert_true(song.get_note(0, 4, 0).effect == "SB2", "S3M mute_channel should preserve SBx")
+    assert_true(song.get_note(0, 5, 0).effect == "SE3", "S3M mute_channel should preserve SEx")
+    assert_true(song.get_note(0, 6, 0).effect == "", "S3M mute_channel should clear channel-local effects")
+
+
 def _build_s3m_header_bytes() -> bytes:
     title = b"Header Test\x00" + b"\x00" * (28 - len("Header Test") - 1)
     header = bytearray()

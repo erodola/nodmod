@@ -82,6 +82,9 @@ class S3MSong(Song):
             settings.append(len(settings) & 0x0F)
         return settings + [255] * (self.MAX_CHANNELS - n_channels)
 
+    def _default_channel_setting_for_index(self, compact_index: int) -> int:
+        return self._default_channel_settings(compact_index + 1)[compact_index]
+
     def _rebuild_channel_mappings(self) -> None:
         self.raw_channel_slots = [idx for idx, value in enumerate(self.channel_settings) if value != 255]
         self.compact_to_raw_channel = list(self.raw_channel_slots)
@@ -289,6 +292,11 @@ class S3MSong(Song):
             for row in range(pat.n_rows):
                 pat.data[channel][row] = S3MNote()
 
+    def resize_pattern(self, sequence_idx: int, n_rows: int) -> None:
+        if n_rows != self.ROWS:
+            raise ValueError(f"S3M patterns have fixed 64 rows (got {n_rows}).")
+        self._get_sequence_pattern(sequence_idx)
+
     def get_note(self, sequence_idx: int, row: int, channel: int) -> S3MNote:
         pat = self._get_sequence_pattern(sequence_idx)
         if row < 0 or row >= pat.n_rows:
@@ -334,6 +342,69 @@ class S3MSong(Song):
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
         self.set_effect(pattern, channel, row, f"A{ticks:02X}")
+
+    def add_channel(self, count: int = 1) -> None:
+        if count <= 0:
+            raise ValueError(f"Invalid channel count {count} (expected >=1).")
+        if self.n_channels + count > self.MAX_CHANNELS:
+            raise ValueError(f"Too many channels: {self.n_channels + count} (S3M supports 1-{self.MAX_CHANNELS}).")
+        for _ in range(count):
+            try:
+                raw_slot = self.channel_settings.index(255)
+            except ValueError as exc:
+                raise ValueError("No unused S3M channel slots are available.") from exc
+            self.channel_settings[raw_slot] = self._default_channel_setting_for_index(self.n_channels)
+            for pat in self.patterns:
+                pat.data.append([S3MNote() for _ in range(pat.n_rows)])
+                pat.n_channels += 1
+            self._rebuild_channel_mappings()
+
+    def remove_channel(self, channel: int) -> None:
+        if self.n_channels <= 1:
+            raise ValueError("Cannot remove last channel (S3M requires at least 1).")
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+        raw_slot = self.compact_to_raw_channel[channel]
+        for pat in self.patterns:
+            pat.data.pop(channel)
+            pat.n_channels -= 1
+        self.channel_settings[raw_slot] = 255
+        self._rebuild_channel_mappings()
+
+    def clear_channel(self, channel: int) -> None:
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+        for pat in self.patterns:
+            for row in range(pat.n_rows):
+                pat.data[channel][row] = S3MNote()
+
+    def mute_channel(self, channel: int) -> None:
+        if channel < 0 or channel >= self.n_channels:
+            raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
+        for pat in self.patterns:
+            for row in range(pat.n_rows):
+                note = pat.data[channel][row]
+                preserved = self._preserved_effect(note.effect)
+                new_note = S3MNote()
+                if preserved:
+                    new_note.effect = preserved
+                pat.data[channel][row] = new_note
+
+    def copy_sample_from(self, src: 'S3MSong', src_sample_idx: int, dst_sample_idx: int | None = None) -> int:
+        if src_sample_idx <= 0 or src_sample_idx > src.MAX_SAMPLES:
+            raise IndexError(f"Invalid source sample index {src_sample_idx} (expected 1-{src.MAX_SAMPLES}).")
+        if dst_sample_idx is not None and (dst_sample_idx <= 0 or dst_sample_idx > self.MAX_SAMPLES):
+            raise IndexError(f"Invalid destination sample index {dst_sample_idx} (expected 1-{self.MAX_SAMPLES}).")
+        if dst_sample_idx is None:
+            for idx, sample in enumerate(self.samples, start=1):
+                if len(sample.waveform) == 0:
+                    dst_sample_idx = idx
+                    break
+            if dst_sample_idx is None:
+                raise ValueError("Couldn't find an empty slot for the new sample.")
+        self.samples[dst_sample_idx - 1] = copy.deepcopy(src.get_sample(src_sample_idx))
+        self._update_n_actual_samples()
+        return dst_sample_idx
 
     def set_n_channels(self, n: int) -> None:
         self.n_channels = n
@@ -531,3 +602,13 @@ class S3MSong(Song):
     @staticmethod
     def _decode_text(raw: bytes) -> str:
         return raw.split(b'\x00', 1)[0].decode('latin-1', errors='replace').rstrip(' ')
+
+    def _preserved_effect(self, effect: str) -> str:
+        effect = self._effect_text(effect)
+        if effect == '':
+            return ''
+        if effect[0] in {'A', 'B', 'C', 'T'}:
+            return effect
+        if effect.startswith('SB') or effect.startswith('SE'):
+            return effect
+        return ''
