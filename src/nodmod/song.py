@@ -61,7 +61,6 @@ class Song(ABC):
         return 2.5 / bpm  # See the 'Classic' tempo mode at https://wiki.openmpt.org/Manual:_Song_Properties
 
     @staticmethod
-    @staticmethod
     def note_to_index(note: str | int) -> int:
         """
         Converts a note string like C-4 or F#3 to a 0-95 index.
@@ -76,6 +75,8 @@ class Song(ABC):
             octave = int(s[2])
         except ValueError as exc:
             raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
+        if octave < 1 or octave > 8:
+            raise ValueError(f"Invalid note octave {note}. Octave must be 1-8 (maps to note index 0-95).")
         if pitch not in Song.PERIOD_SEQ:
             raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
         note_idx = Song.PERIOD_SEQ.index(pitch)
@@ -93,6 +94,7 @@ class Song(ABC):
         return f"{pitch}{octave}"
 
 
+    @staticmethod
     def artist_songname_from_filename(filename: str):
         filename = os.path.basename(filename)
         parts = filename.split(' - ')
@@ -260,15 +262,9 @@ class Song(ABC):
         """
 
         if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid pattern index {seq_idx} (expected 0-{len(self.patterns)-1}).")
 
         self.pattern_seq = self.pattern_seq[:seq_idx + 1]
-
-    def remove_pattern(self, pattern: int) -> None:
-        """
-        Removes a specified pattern from the song sequence (alias of remove_pattern).
-        """
-        self.remove_pattern(pattern)
 
     def remove_pattern(self, seq_idx: int) -> None:
         """
@@ -282,7 +278,7 @@ class Song(ABC):
         :param seq_idx: The pattern index (within the song sequence) to be removed.
         """
         if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid pattern index {seq_idx} (expected 0-{len(self.patterns)-1}).")
 
         self.pattern_seq = self.pattern_seq[:seq_idx] + self.pattern_seq[seq_idx + 1:]
 
@@ -304,7 +300,7 @@ class Song(ABC):
         :param seq_idx: The pattern index (within the song sequence) to be kept.
         """
         if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid pattern index {seq_idx} (expected 0-{len(self.patterns)-1}).")
 
         self.pattern_seq = [self.pattern_seq[seq_idx]]
 
@@ -317,7 +313,7 @@ class Song(ABC):
         :return: The index of the new pattern.
         """
         if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid pattern index {seq_idx} (expected 0-{len(self.patterns)-1}).")
         self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[seq_idx]]))
         new_idx = len(self.patterns) - 1
         seq_pos = seq_idx + 1 if after else seq_idx
@@ -332,7 +328,7 @@ class Song(ABC):
         :return: The index of the new pattern.
         """
         if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+            raise IndexError(f"Invalid pattern index {seq_idx} (expected 0-{len(self.patterns)-1}).")
 
         self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[seq_idx]]))
         n = len(self.patterns) - 1

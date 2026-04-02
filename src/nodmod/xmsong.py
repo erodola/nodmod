@@ -564,7 +564,7 @@ class XMSong(Song):
             
             self.tracker_name = header[38:58].decode('latin-1').rstrip(' \x00')
             
-            version = int.from_bytes(header[58:60], byteorder='big', signed=False)
+            version = int.from_bytes(header[58:60], byteorder='little', signed=False)
             if version < 0x0104:
                 raise NotImplementedError(f"Unsupported XM version {version} (expected 0x0104).")
             
@@ -585,8 +585,8 @@ class XMSong(Song):
 
             # number of instruments (note : some instruments may be empty)
             self.n_instruments = int.from_bytes(data[72:74], byteorder='little', signed=False)
-            if self.n_instruments > 128:
-                raise NotImplementedError(f"Too many instruments: {self.n_instruments} (XM supports 1-128).")
+            if self.n_instruments > 256:
+                raise NotImplementedError(f"Too many instruments: {self.n_instruments} (expected 1-256).")
             self.instruments = [Instrument() for _ in range(self.n_instruments)]
 
             # 0 = Amiga frequency table; 1 = Linear frequency table
@@ -640,9 +640,7 @@ class XMSong(Song):
 
             def get_instrument(instrument_byte, pat_num, row, chan) -> int:
 
-                if instrument_byte > 128:
-                    if verbose:
-                        warnings.warn(f"Non-standard instrument value {instrument_byte} at pattern {pat_num}, row {row}, channel {chan}. Ignoring.")
+                if instrument_byte > 256:
                     return 0  # Treat as "no instrument change"
                             
                 return instrument_byte
@@ -1382,7 +1380,7 @@ class XMSong(Song):
         pat = self.patterns[self.pattern_seq[pattern]]
 
         if row < 0 or row >= pat.n_rows:
-            raise IndexError(f"Invalid row index {row} (expected 0-{self.patterns[pattern].n_rows-1}).")
+            raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
 
         if channel < 0 or channel >= pat.n_channels:
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
@@ -1472,7 +1470,7 @@ class XMSong(Song):
         pat = self.patterns[self.pattern_seq[pattern_in_song]]
 
         if row < 0 or row >= pat.n_rows:
-            raise IndexError(f"Invalid row index {row} (expected 0-{self.patterns[pattern].n_rows-1}).")
+            raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
 
         if channel < 0 or channel >= pat.n_channels:
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")

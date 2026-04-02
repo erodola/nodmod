@@ -269,8 +269,8 @@ class MODSong(Song):
         if verbose:
             print(f'Saving to {fname}... ', end='', flush=True)
 
-        if len(self.pattern_seq) == 0 or len(self.patterns) > 128:
-            raise OverflowError(f"Too many patterns ({len(self.pattern_seq)}). MOD supports up to 128.")
+        if len(self.pattern_seq) == 0 or len(self.pattern_seq) > 128 or len(self.patterns) > 128:
+            raise OverflowError(f"Too many patterns (sequence: {len(self.pattern_seq)}, unique: {len(self.patterns)}). MOD supports up to 128.")
 
         data = bytearray()
 
@@ -364,6 +364,8 @@ class MODSong(Song):
                         efx_param = int(note.effect[1:], 16)
 
                     if note.period != '':
+                        if note.period not in MODSong.INV_PERIOD_TABLE:
+                            raise ValueError(f"Unknown note period '{note.period}' in pattern {p}, row {r}, channel {c}.")
                         pd = MODSong.INV_PERIOD_TABLE[note.period]
                     else:
                         pd = 0
@@ -861,7 +863,7 @@ class MODSong(Song):
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
 
-        self.samples[sample_idx] = Sample()
+        self.samples[sample_idx - 1] = Sample()
 
     def keep_sample(self, sample_idx: int):
         """
@@ -1083,6 +1085,8 @@ class MODSong(Song):
         """
         period_raw = ((note[0] & 0x0F) << 8) | note[1]
         if period_raw != 0:
+            if period_raw not in MODSong.PERIOD_TABLE:
+                raise ValueError(f"Unknown period value {period_raw} in MOD note data.")
             return MODSong.PERIOD_TABLE[period_raw]
         else:
             return ""
@@ -1160,7 +1164,7 @@ class MODSong(Song):
         if slide > 0:
             self.set_effect(pattern, channel, row, f"1{slide:02X}")
         elif slide < 0:
-            self.set_effect(pattern, channel, row, f"2{slide:02X}")
+            self.set_effect(pattern, channel, row, f"2{(-slide):02X}")
 
     def set_tone_portamento(self, pattern: int, channel: int, row: int, speed: int):
         """
