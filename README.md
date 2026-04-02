@@ -53,8 +53,7 @@ from nodmod import XMSong
 from nodmod.types import XMSample
 
 song = XMSong()
-song.n_channels = 4
-song.add_pattern(64)
+song.set_n_channels(4)
 
 inst = song.new_instrument("Lead")
 smp = XMSample()
@@ -66,8 +65,30 @@ song.set_sample_map_all(inst, 1)
 
 song.set_note(0, 0, 0, inst, "C-4", "")
 song.set_sample_panning(inst, 1, 192)
+song.set_global_volume(0, 0, 0, 64)
 
 song.save("music/lead.xm")
+```
+
+## API Notes
+
+- `add_pattern()` returns a pattern pool index, then also appends that pattern to the song sequence. Most note-editing methods take a sequence index.
+- XM instrument indices and XM sample indices are 1-based. MOD sample indices are also 1-based.
+- MOD sample finetune uses the raw tracker nibble `0..15`; musically, values `8..15` represent `-8..-1`.
+- XM sample finetune is signed `-128..127`.
+
+## Extras
+
+ASCII dumps are available for both formats:
+
+```python
+song.save_ascii("music/debug.txt")
+```
+
+Rendering can target mono or multi-channel output when `openmpt123` is available:
+
+```python
+song.render("music/render.wav", channels=2)
 ```
 
 ## Requirements

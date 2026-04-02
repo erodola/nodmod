@@ -22,6 +22,8 @@ class XMSong(Song):
     Each instrument can contain 0, 1, or many samples. Notes in XM files reference
     instruments by index, and the instrument determines which sample(s) to play.
     """
+
+    PRESERVED_EFFECT_PREFIXES = Song.PRESERVED_EFFECT_PREFIXES | frozenset({'G', 'H'})
     
     @property
     def file_extension(self) -> str:
@@ -64,6 +66,37 @@ class XMSong(Song):
         self.default_speed = 6     # Default ticks per row
         self.default_tempo = 125   # Default BPM
         self.n_channels = 8        # Number of channels (XM supports 2-32)
+        self.add_pattern()
+
+    def set_default_speed(self, speed: int) -> None:
+        if speed < 1 or speed > 31:
+            raise ValueError(f"Invalid default speed {speed} (expected 1-31).")
+        self.default_speed = speed
+
+    def set_default_tempo(self, bpm: int) -> None:
+        if bpm < 32 or bpm > 255:
+            raise ValueError(f"Invalid default tempo {bpm} (expected 32-255).")
+        self.default_tempo = bpm
+
+    def set_song_restart(self, pos: int) -> None:
+        if pos < 0 or pos >= len(self.pattern_seq):
+            raise IndexError(f"Invalid song restart position {pos} (expected 0-{len(self.pattern_seq)-1}).")
+        self.song_restart = pos
+
+    def set_linear_frequency(self, on: bool) -> None:
+        if on:
+            self.flags |= 0x01
+        else:
+            self.flags &= ~0x01
+
+    def set_n_channels(self, n: int) -> None:
+        if n < 1 or n > 32:
+            raise ValueError(f"Invalid channel count {n} (expected 1-32).")
+        if n > self.n_channels:
+            self.add_channel(n - self.n_channels)
+            return
+        while self.n_channels > n:
+            self.remove_channel(self.n_channels - 1)
         
     def copy(self) -> 'XMSong':
         """
@@ -1150,7 +1183,7 @@ class XMSong(Song):
     -------------------------------------
     '''
 
-    def timestamp(self) -> list[list[float, int, int]]:
+    def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
@@ -1388,8 +1421,8 @@ class XMSong(Song):
         cur_note = pat.data[channel][row]
 
         cur_efx = cur_note.effect
-        if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
-            effect = cur_efx
+        if effect == '':
+            effect = self._preserved_effect(cur_efx)
 
         new_note = XMNote()
         new_note.instrument_idx = instrument
@@ -1438,11 +1471,7 @@ class XMSong(Song):
         for pat in self.patterns:
             for r in range(pat.n_rows):
                 note = pat.data[channel][r]
-                global_effect = ""
-                if note.effect:
-                    effect_type = note.effect[0]
-                    if effect_type in ['F', 'B', 'D', 'E']:
-                        global_effect = note.effect
+                global_effect = self._preserved_effect(note.effect)
                 new_note = XMNote()
                 if global_effect:
                     new_note.effect = global_effect
@@ -1513,6 +1542,64 @@ class XMSong(Song):
 
         self.set_effect(pattern, channel, row, f"F{ticks:02X}")
 
+    def set_global_volume(self, pattern: int, channel: int, row: int, volume: int):
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid global volume {volume} (expected 0-64).")
+        self.set_effect(pattern, channel, row, f"G{volume:02X}")
+
+    def set_global_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid global volume slide {slide} (expected -15 to 15).")
+        effect_value = 0
+        if slide > 0:
+            effect_value = slide << 4
+        elif slide < 0:
+            effect_value = -slide
+        self.set_effect(pattern, channel, row, f"H{effect_value:02X}")
+
+    def set_key_off(self, pattern: int, channel: int, row: int, ticks: int):
+        if ticks < 0 or ticks > 255:
+            raise ValueError(f"Invalid key-off tick {ticks} (expected 0-255).")
+        self.set_effect(pattern, channel, row, f"K{ticks:02X}")
+
+    def set_envelope_position(self, pattern: int, channel: int, row: int, pos: int):
+        if pos < 0 or pos > 255:
+            raise ValueError(f"Invalid envelope position {pos} (expected 0-255).")
+        self.set_effect(pattern, channel, row, f"L{pos:02X}")
+
+    def set_panning_slide(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid panning slide {slide} (expected -15 to 15).")
+        if slide > 0:
+            effect = f"P{slide:X}0"
+        elif slide < 0:
+            effect = f"P0{-slide:X}"
+        else:
+            effect = "P00"
+        self.set_effect(pattern, channel, row, effect)
+
+    def set_retrigger_volume_slide(self, pattern: int, channel: int, row: int, volume_slide: int, interval: int):
+        if volume_slide < 0 or volume_slide > 15:
+            raise ValueError(f"Invalid retrigger volume slide {volume_slide} (expected 0-15).")
+        if interval < 0 or interval > 15:
+            raise ValueError(f"Invalid retrigger interval {interval} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"R{volume_slide:X}{interval:X}")
+
+    def set_tremor(self, pattern: int, channel: int, row: int, on_ticks: int, off_ticks: int):
+        if on_ticks < 0 or on_ticks > 15 or off_ticks < 0 or off_ticks > 15:
+            raise ValueError("Tremor values must be in the range 0-15.")
+        self.set_effect(pattern, channel, row, f"T{on_ticks:X}{off_ticks:X}")
+
+    def set_extra_fine_portamento(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid extra-fine portamento {slide} (expected -15 to 15).")
+        if slide > 0:
+            self.set_effect(pattern, channel, row, f"X1{slide:X}")
+        elif slide < 0:
+            self.set_effect(pattern, channel, row, f"X2{-slide:X}")
+        else:
+            self.set_effect(pattern, channel, row, "X10")
+
     '''
     -------------------------------------
     INSTRUMENTS AND SAMPLES
@@ -1521,7 +1608,7 @@ class XMSong(Song):
 
     def new_instrument(self, name: str = "") -> int:
         """
-        Creates a new empty instrument and returns its 1-based index.
+        Creates a new empty instrument and returns its 1-based instrument index.
         """
         inst = Instrument()
         inst.name = name
@@ -1611,6 +1698,9 @@ class XMSong(Song):
         smp.volume = volume
 
     def set_sample_finetune(self, inst_idx: int, sample_idx: int, finetune: int) -> None:
+        """
+        Sets the XM sample finetune value as a signed byte in the range -128 to 127.
+        """
         if finetune < -128 or finetune > 127:
             raise ValueError(f"Invalid finetune {finetune} (expected -128 to 127).")
         smp = self.get_sample(inst_idx, sample_idx)
@@ -1694,7 +1784,7 @@ class XMSong(Song):
 
     def add_sample(self, inst_idx: int, sample: XMSample) -> int:
         """
-        Adds a sample to an instrument and returns its 1-based sample index.
+        Adds a sample to an instrument and returns its 1-based sample index within that instrument.
         """
         inst = self.get_instrument(inst_idx)
         inst.samples.append(sample)
@@ -1769,7 +1859,7 @@ class XMSong(Song):
         Loads a raw PCM sample and stores it in the given instrument.
 
         :param inst_idx: The instrument index (1-based).
-        :param raw_bytes: Raw PCM bytes (mono) or a list of floats in [-1, 1].
+        :param raw_bytes: Raw mono PCM bytes, or normalized float samples in the range [-1.0, 1.0].
         :param sample_width: Sample width in bytes (1 for 8-bit, 2 for 16-bit).
         :return: The 1-based sample index.
         """
@@ -2045,10 +2135,10 @@ class XMSong(Song):
 
     def add_pattern(self, n_rows: int = 64) -> int:
         """
-        Creates a brand new pattern and adds it to the song sequence.
+        Creates a brand new pattern, appends it to the pattern pool, and adds that pool index to the song sequence.
 
         :param n_rows: Number of rows in the new pattern (default 64, XM supports 1-256).
-        :return: The index of the new pattern in the sequence.
+        :return: The new pattern pool index.
         """
         if n_rows < 1 or n_rows > 256:
             raise ValueError(f"Invalid row count {n_rows}. XM supports 1-256 rows.")
@@ -2064,6 +2154,15 @@ class XMSong(Song):
         self.pattern_seq.append(n)
 
         return n
+
+    def get_used_instruments(self) -> list[int]:
+        used = set()
+        for pattern in self.patterns:
+            for channel in pattern.data:
+                for note in channel:
+                    if note.instrument_idx > 0:
+                        used.add(note.instrument_idx)
+        return sorted(used)
 
     def get_effective_row_count(self, pattern: int, include_loops: bool = True) -> int:
         """

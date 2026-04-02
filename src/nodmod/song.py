@@ -27,6 +27,7 @@ class Song(ABC):
     """
 
     PERIOD_SEQ = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-']
+    PRESERVED_EFFECT_PREFIXES = frozenset({'B', 'C', 'D', 'E', 'F'})
 
     def __init__(self):
 
@@ -34,6 +35,15 @@ class Song(ABC):
         self.songname = "new song"
         self.patterns = []
         self.pattern_seq = []  # The actual sequence of patterns making up the song.
+
+    def __repr__(self) -> str:
+        n_channels = getattr(self, 'n_channels', self.patterns[0].n_channels if self.patterns else 0)
+        return (
+            f"{self.__class__.__name__}(songname={self.songname!r}, "
+            f"patterns={len(self.patterns)}, sequence={len(self.pattern_seq)}, channels={n_channels})"
+        )
+
+    __str__ = __repr__
 
     '''
     -------------------------------------
@@ -46,6 +56,43 @@ class Song(ABC):
 
     def set_songname(self, song_name: str):
         self.songname = song_name
+
+    @staticmethod
+    def _effect_text(note_or_effect) -> str:
+        if hasattr(note_or_effect, 'effect'):
+            effect = note_or_effect.effect
+        elif note_or_effect is None:
+            effect = ''
+        else:
+            effect = str(note_or_effect)
+        return effect.strip().upper()
+
+    @staticmethod
+    def parse_effect(effect_str) -> tuple[str, int | None]:
+        effect = Song._effect_text(effect_str)
+        if effect == '':
+            return '', None
+        if len(effect) < 2:
+            raise ValueError(f"Invalid effect string {effect!r}.")
+        if effect[0] in {'E', 'X'}:
+            if len(effect) != 3:
+                raise ValueError(f"Invalid extended effect string {effect!r}.")
+            return effect[:2], int(effect[2], 16)
+        return effect[0], int(effect[1:], 16)
+
+    @staticmethod
+    def get_bpm(note_or_effect) -> int | None:
+        effect_name, value = Song.parse_effect(note_or_effect)
+        if effect_name == 'F' and value is not None and value >= 32:
+            return value
+        return None
+
+    @staticmethod
+    def get_ticks_per_row(note_or_effect) -> int | None:
+        effect_name, value = Song.parse_effect(note_or_effect)
+        if effect_name == 'F' and value is not None and 1 <= value <= 31:
+            return value
+        return None
 
     @staticmethod
     def get_tick_duration(bpm: int) -> float:
@@ -127,7 +174,7 @@ class Song(ABC):
         """
         pass
 
-    def render(self, fname: str, verbose: bool = True, cleanup: bool = True):
+    def render(self, fname: str, verbose: bool = True, cleanup: bool = True, channels: int = 1):
         """
         Renders the current song as a WAV file at 44.1kHz.
         
@@ -136,8 +183,12 @@ class Song(ABC):
         :param fname: Complete path of the output WAV file.
         :param verbose: False for silent rendering.
         :param cleanup: True to remove the temporary module file generated for rendering.
+        :param channels: Number of output channels for the render command.
         :return: None.
         """
+
+        if channels <= 0:
+            raise ValueError(f"Invalid channel count {channels} (expected >=1).")
 
         if verbose:
             print("Rendering as wav... ", end='', flush=True)
@@ -160,7 +211,7 @@ class Song(ABC):
 
         try:
             subprocess.run(
-                ["openmpt123", temp_file, "-q", "--channels", "1", "--samplerate", "44100", "--render"],
+                ["openmpt123", temp_file, "-q", "--channels", str(channels), "--samplerate", "44100", "--render"],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -187,7 +238,7 @@ class Song(ABC):
             print("done.")
 
     @abstractmethod
-    def timestamp(self) -> list[list[float, int, int]]:
+    def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
 
@@ -203,7 +254,34 @@ class Song(ABC):
         :return: The song duration in seconds.
         """
         
-        return self.timestamp()[-1][-1][0]
+        timestamps = self.timestamp()
+        if not timestamps or not timestamps[-1]:
+            return 0.0
+        return timestamps[-1][-1][0]
+
+    def get_song_info(self) -> dict:
+        """
+        Returns a quick song summary suitable for inspection or logging.
+        """
+        timestamps = []
+        try:
+            timestamps = self.timestamp()
+        except Exception:
+            timestamps = []
+        first_row = timestamps[0][0] if timestamps and timestamps[0] else None
+        n_channels = getattr(self, 'n_channels', self.patterns[0].n_channels if self.patterns else 0)
+        return {
+            'format': self.file_extension,
+            'songname': self.songname,
+            'artist': self.artist,
+            'n_patterns': len(self.patterns),
+            'sequence_length': len(self.pattern_seq),
+            'n_channels': n_channels,
+            'sequence': list(self.pattern_seq),
+            'speed': first_row[1] if first_row else None,
+            'bpm': first_row[2] if first_row else None,
+            'duration_seconds': self.get_song_duration() if timestamps else 0.0,
+        }
     
     '''
     -------------------------------------
@@ -336,6 +414,44 @@ class Song(ABC):
 
         return n
 
+    def copy_pattern_from(self, src_song: 'Song', src_pattern_idx: int) -> int:
+        """
+        Copies a source pattern pool entry from another song and appends it to this song and sequence.
+
+        :param src_song: The source song.
+        :param src_pattern_idx: The source pattern pool index.
+        :return: The destination pattern pool index.
+        """
+        if src_pattern_idx < 0 or src_pattern_idx >= len(src_song.patterns):
+            raise IndexError(f"Invalid source pattern index {src_pattern_idx} (expected 0-{len(src_song.patterns)-1}).")
+        self.patterns.append(copy.deepcopy(src_song.patterns[src_pattern_idx]))
+        new_idx = len(self.patterns) - 1
+        self.pattern_seq.append(new_idx)
+        return new_idx
+
+    def is_pattern_empty(self, pattern: int) -> bool:
+        """
+        Returns True if every note in the given sequence pattern is empty.
+        """
+        pat = self._get_sequence_pattern(pattern)
+        for channel in pat.data:
+            for note in channel:
+                if not note.is_empty():
+                    return False
+        return True
+
+    def get_used_patterns(self) -> list[int]:
+        """
+        Returns unique pattern pool indices referenced by the song sequence, preserving order.
+        """
+        used = []
+        seen = set()
+        for pattern_idx in self.pattern_seq:
+            if pattern_idx not in seen:
+                seen.add(pattern_idx)
+                used.append(pattern_idx)
+        return used
+
     '''
     -------------------------------------
     NOTES
@@ -356,12 +472,84 @@ class Song(ABC):
         :return: None.
         """
 
-        cur_efx = self.patterns[self.pattern_seq[seq_idx]].data[channel][row].effect
-        if effect == '' and cur_efx != '' and cur_efx[0] == 'F':
-            effect = cur_efx
+        pat = self._get_sequence_pattern(seq_idx)
+        cur_note = pat.data[channel][row]
+        if effect == '':
+            effect = self._preserved_effect(cur_note.effect)
 
-        self.patterns[self.pattern_seq[seq_idx]].data[channel][row] = (
-            Note(sample, period, effect))
+        pat.data[channel][row] = Note(sample, period, effect)
+
+    def clear_note(self, seq_idx: int, channel: int, row: int):
+        """
+        Clears a single note cell completely.
+        """
+        pat = self._get_sequence_pattern(seq_idx)
+        pat.data[channel][row] = type(pat.data[channel][row])()
+
+    def clear_row(self, seq_idx: int, row: int):
+        """
+        Clears a full row across all channels in a sequence pattern.
+        """
+        pat = self._get_sequence_pattern(seq_idx)
+        if row < 0 or row >= pat.n_rows:
+            raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
+        for channel in range(pat.n_channels):
+            pat.data[channel][row] = type(pat.data[channel][row])()
+
+    def copy_row(self, src_seq_idx: int, src_row: int, dst_seq_idx: int, dst_row: int):
+        """
+        Copies a full row between sequence patterns.
+        """
+        src_pat = self._get_sequence_pattern(src_seq_idx)
+        dst_pat = self._get_sequence_pattern(dst_seq_idx)
+        if src_row < 0 or src_row >= src_pat.n_rows:
+            raise IndexError(f"Invalid source row index {src_row} (expected 0-{src_pat.n_rows-1}).")
+        if dst_row < 0 or dst_row >= dst_pat.n_rows:
+            raise IndexError(f"Invalid destination row index {dst_row} (expected 0-{dst_pat.n_rows-1}).")
+        for channel in range(dst_pat.n_channels):
+            dst_pat.data[channel][dst_row] = type(dst_pat.data[channel][dst_row])()
+        for channel in range(min(src_pat.n_channels, dst_pat.n_channels)):
+            dst_pat.data[channel][dst_row] = copy.deepcopy(src_pat.data[channel][src_row])
+
+    def shift_pattern(self, seq_idx: int, delta_rows: int):
+        """
+        Shifts all rows in a sequence pattern using clipping semantics.
+        Positive values shift downward, negative values shift upward.
+        """
+        pat = self._get_sequence_pattern(seq_idx)
+        for channel in range(pat.n_channels):
+            old_rows = pat.data[channel]
+            new_rows = [type(old_rows[row])() for row in range(pat.n_rows)]
+            for row, note in enumerate(old_rows):
+                new_row = row + delta_rows
+                if 0 <= new_row < pat.n_rows:
+                    new_rows[new_row] = copy.deepcopy(note)
+            pat.data[channel] = new_rows
+
+    def copy_channel_data(self, src_seq_idx: int, src_channel: int, dst_seq_idx: int, dst_channel: int):
+        """
+        Copies one channel's note data to another channel, across the same or different patterns.
+        """
+        src_pat = self._get_sequence_pattern(src_seq_idx)
+        dst_pat = self._get_sequence_pattern(dst_seq_idx)
+        if src_channel < 0 or src_channel >= src_pat.n_channels:
+            raise IndexError(f"Invalid source channel index {src_channel} (expected 0-{src_pat.n_channels-1}).")
+        if dst_channel < 0 or dst_channel >= dst_pat.n_channels:
+            raise IndexError(f"Invalid destination channel index {dst_channel} (expected 0-{dst_pat.n_channels-1}).")
+        dst_pat.data[dst_channel] = [type(dst_pat.data[dst_channel][row])() for row in range(dst_pat.n_rows)]
+        for row in range(min(src_pat.n_rows, dst_pat.n_rows)):
+            dst_pat.data[dst_channel][row] = copy.deepcopy(src_pat.data[src_channel][row])
+
+    def swap_channels(self, ch1: int, ch2: int):
+        """
+        Swaps two channel columns across every pattern in the song.
+        """
+        if ch1 == ch2:
+            return
+        for pat in self.patterns:
+            if ch1 < 0 or ch1 >= pat.n_channels or ch2 < 0 or ch2 >= pat.n_channels:
+                raise IndexError(f"Invalid channel indices {ch1}, {ch2} for pattern with {pat.n_channels} channels.")
+            pat.data[ch1], pat.data[ch2] = pat.data[ch2], pat.data[ch1]
 
     '''
     -------------------------------------
@@ -383,3 +571,197 @@ class Song(ABC):
 
         self.patterns[self.pattern_seq[seq_idx]].data[channel][row].effect \
             = effect
+
+    @staticmethod
+    def note_in_range(note_str: str, lo: str | int, hi: str | int) -> bool:
+        """
+        Returns True if note_str falls within the inclusive note range.
+        """
+        note_idx = Song.note_to_index(note_str)
+        lo_idx = Song.note_to_index(lo)
+        hi_idx = Song.note_to_index(hi)
+        return lo_idx <= note_idx <= hi_idx
+
+    @staticmethod
+    def transpose_note(note_str: str, semitones: int) -> str:
+        """
+        Transposes a note string by the given number of semitones.
+        """
+        if note_str == '':
+            return ''
+        if note_str == 'off':
+            return 'off'
+        new_index = Song.note_to_index(note_str) + semitones
+        return Song.index_to_note(new_index)
+
+    def set_bpm(self, pattern: int, channel: int, row: int, bpm: int):
+        if bpm < 32 or bpm > 255:
+            raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
+        self.set_effect(pattern, channel, row, f"F{bpm:02X}")
+
+    def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
+        if ticks < 1 or ticks > 31:
+            raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
+        self.set_effect(pattern, channel, row, f"F{ticks:02X}")
+
+    def set_arpeggio(self, pattern: int, channel: int, row: int, note1: int, note2: int):
+        if note1 < 0 or note1 > 15 or note2 < 0 or note2 > 15:
+            raise ValueError("Arpeggio offsets must be in the range 0-15.")
+        self.set_effect(pattern, channel, row, f"0{note1:X}{note2:X}")
+
+    def set_panning(self, pattern: int, channel: int, row: int, panning: int):
+        if panning < 0 or panning > 255:
+            raise ValueError(f"Invalid panning {panning} (expected 0-255).")
+        self.set_effect(pattern, channel, row, f"8{panning:02X}")
+
+    def set_sample_offset(self, pattern: int, channel: int, row: int, offset: int):
+        if offset < 0 or offset > 255:
+            raise ValueError(f"Invalid sample offset {offset} (expected 0-255).")
+        self.set_effect(pattern, channel, row, f"9{offset:02X}")
+
+    def set_position_jump(self, pattern: int, channel: int, row: int, pos: int):
+        if pos < 0 or pos > 255:
+            raise ValueError(f"Invalid position jump {pos} (expected 0-255).")
+        self.set_effect(pattern, channel, row, f"B{pos:02X}")
+
+    def set_pattern_break(self, pattern: int, channel: int, row: int, row_target: int):
+        if row_target < 0 or row_target > 99:
+            raise ValueError(f"Invalid pattern break row {row_target} (expected 0-99).")
+        tens, ones = divmod(row_target, 10)
+        self.set_effect(pattern, channel, row, f"D{tens:X}{ones:X}")
+
+    def set_portamento(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -255 or slide > 255:
+            raise ValueError(f"Invalid portamento slide {slide} (expected -255 to 255).")
+        if slide > 0:
+            self.set_effect(pattern, channel, row, f"1{slide:02X}")
+        elif slide < 0:
+            self.set_effect(pattern, channel, row, f"2{(-slide):02X}")
+
+    def set_tone_portamento(self, pattern: int, channel: int, row: int, speed: int):
+        if speed < 0 or speed > 255:
+            raise ValueError(f"Invalid tone portamento speed {speed} (expected 0-255).")
+        self.set_effect(pattern, channel, row, f"3{speed:02X}")
+
+    def set_tone_portamento_slide(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid tone portamento slide {slide} (expected -15 to 15).")
+        effect_value = 0
+        if slide > 0:
+            effect_value = slide << 4
+        elif slide < 0:
+            effect_value = -slide
+        self.set_effect(pattern, channel, row, f"5{effect_value:02X}")
+
+    def set_volume(self, pattern: int, channel: int, row: int, volume: int):
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid volume {volume} (expected 0-64).")
+        self.set_effect(pattern, channel, row, f"C{volume:02X}")
+
+    def set_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid volume slide {slide} (expected -15 to 15).")
+        effect_value = 0
+        if slide > 0:
+            effect_value = slide << 4
+        elif slide < 0:
+            effect_value = -slide
+        self.set_effect(pattern, channel, row, f"A{effect_value:02X}")
+
+    def set_vibrato(self, pattern: int, channel: int, row: int, speed: int, depth: int):
+        if speed < 0 or speed > 15:
+            raise ValueError(f"Invalid vibrato speed {speed} (expected 0-15).")
+        if depth < 0 or depth > 15:
+            raise ValueError(f"Invalid vibrato depth {depth} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"4{(speed << 4) | depth:02X}")
+
+    def set_vibrato_slide(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid vibrato slide {slide} (expected -15 to 15).")
+        effect_value = 0
+        if slide > 0:
+            effect_value = slide << 4
+        elif slide < 0:
+            effect_value = -slide
+        self.set_effect(pattern, channel, row, f"6{effect_value:02X}")
+
+    def set_tremolo(self, pattern: int, channel: int, row: int, speed: int, depth: int):
+        if speed < 0 or speed > 15:
+            raise ValueError(f"Invalid tremolo speed {speed} (expected 0-15).")
+        if depth < 0 or depth > 15:
+            raise ValueError(f"Invalid tremolo depth {depth} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"7{(speed << 4) | depth:02X}")
+
+    def set_fine_portamento(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid fine portamento {slide} (expected -15 to 15).")
+        if slide > 0:
+            self.set_effect(pattern, channel, row, f"E1{slide:X}")
+        elif slide < 0:
+            self.set_effect(pattern, channel, row, f"E2{-slide:X}")
+        else:
+            self.set_effect(pattern, channel, row, "E10")
+
+    def set_glissando(self, pattern: int, channel: int, row: int, on: bool):
+        self.set_effect(pattern, channel, row, f"E3{1 if on else 0}")
+
+    def set_vibrato_waveform(self, pattern: int, channel: int, row: int, wave: int):
+        if wave < 0 or wave > 7:
+            raise ValueError(f"Invalid vibrato waveform {wave} (expected 0-7).")
+        self.set_effect(pattern, channel, row, f"E4{wave:X}")
+
+    def set_finetune(self, pattern: int, channel: int, row: int, finetune: int):
+        if finetune < 0 or finetune > 15:
+            raise ValueError(f"Invalid finetune {finetune} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"E5{finetune:X}")
+
+    def set_pattern_loop(self, pattern: int, channel: int, row: int, count: int):
+        if count < 0 or count > 15:
+            raise ValueError(f"Invalid pattern loop count {count} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"E6{count:X}")
+
+    def set_tremolo_waveform(self, pattern: int, channel: int, row: int, wave: int):
+        if wave < 0 or wave > 7:
+            raise ValueError(f"Invalid tremolo waveform {wave} (expected 0-7).")
+        self.set_effect(pattern, channel, row, f"E7{wave:X}")
+
+    def set_retrigger(self, pattern: int, channel: int, row: int, interval: int):
+        if interval < 0 or interval > 15:
+            raise ValueError(f"Invalid retrigger interval {interval} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"E9{interval:X}")
+
+    def set_fine_volume_slide(self, pattern: int, channel: int, row: int, slide: int):
+        if slide < -15 or slide > 15:
+            raise ValueError(f"Invalid fine volume slide {slide} (expected -15 to 15).")
+        if slide > 0:
+            self.set_effect(pattern, channel, row, f"EA{slide:X}")
+        elif slide < 0:
+            self.set_effect(pattern, channel, row, f"EB{-slide:X}")
+        else:
+            self.set_effect(pattern, channel, row, "EA0")
+
+    def set_note_cut(self, pattern: int, channel: int, row: int, tick: int):
+        if tick < 0 or tick > 15:
+            raise ValueError(f"Invalid note cut tick {tick} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"EC{tick:X}")
+
+    def set_note_delay(self, pattern: int, channel: int, row: int, tick: int):
+        if tick < 0 or tick > 15:
+            raise ValueError(f"Invalid note delay tick {tick} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"ED{tick:X}")
+
+    def set_pattern_delay(self, pattern: int, channel: int, row: int, rows: int):
+        if rows < 0 or rows > 15:
+            raise ValueError(f"Invalid pattern delay {rows} (expected 0-15).")
+        self.set_effect(pattern, channel, row, f"EE{rows:X}")
+
+    def _get_sequence_pattern(self, seq_idx: int):
+        if seq_idx < 0 or seq_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid pattern index {seq_idx} (expected 0-{len(self.pattern_seq)-1}).")
+        return self.patterns[self.pattern_seq[seq_idx]]
+
+    def _preserved_effect(self, effect: str) -> str:
+        effect = self._effect_text(effect)
+        if effect and effect[0] in self.PRESERVED_EFFECT_PREFIXES:
+            return effect
+        return ''

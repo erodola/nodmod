@@ -58,6 +58,21 @@ class MODSong(Song):
         self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
         self.n_actual_samples = 0  # The number of non-empty samples present in the song.
 
+    def _update_n_actual_samples(self) -> None:
+        self.n_actual_samples = sum(1 for sample in self.samples if len(sample.waveform) > 0)
+
+    @staticmethod
+    def period_to_note(period_value: int) -> str:
+        if period_value not in MODSong.PERIOD_TABLE:
+            raise ValueError(f"Unknown period value {period_value}.")
+        return MODSong.PERIOD_TABLE[period_value]
+
+    @staticmethod
+    def note_to_period(note_str: str) -> int:
+        if note_str not in MODSong.INV_PERIOD_TABLE:
+            raise ValueError(f"Unknown MOD note {note_str!r}.")
+        return MODSong.INV_PERIOD_TABLE[note_str]
+
     def copy(self) -> MODSong:
         """
         Creates a deep copy of this song.
@@ -403,7 +418,7 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def timestamp(self) -> list[list[float, int, int]]:
+    def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
         Computes the timestamp of each row in the song.
         Takes into account speed / bpm changes, pattern breaks, and position jumps.
@@ -606,17 +621,18 @@ class MODSong(Song):
             audio = audio.set_sample_width(1)
 
         self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
+        self._update_n_actual_samples()
 
         return sample_idx, self.samples[sample_idx - 1]
 
     def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int = 0, input_sr: int = NTSC_SR) -> tuple[int, Sample]:
         """
         Loads a sample from a raw list of samples, and stores it at the given sample index.
-        The raw samples should be a list of float values in the range [-1, 1].
+        The raw samples should be a mono list of normalized float values in the range [-1.0, 1.0].
 
         If the sample rate is different from NTSC_SR, the samples will be resampled to NTSC_SR.
 
-        :param raw_samples: The raw samples to load.
+        :param raw_samples: Mono normalized PCM samples in the range [-1.0, 1.0].
         :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
                            Use 0 to automatically use the next available slot.
         :param input_sr: The sample rate of the input raw samples (default NTSC_SR).
@@ -660,6 +676,7 @@ class MODSong(Song):
         audio = audio.set_frame_rate(self.NTSC_SR)
 
         self.samples[sample_idx - 1].waveform = audio.get_array_of_samples()
+        self._update_n_actual_samples()
 
         return sample_idx, self.samples[sample_idx - 1]
     
@@ -704,6 +721,11 @@ class MODSong(Song):
         smp.volume = volume
 
     def set_sample_finetune(self, sample_idx: int, finetune: int) -> None:
+        """
+        Sets the raw MOD finetune nibble.
+
+        MOD stores finetune as 0-15, where 8-15 correspond to musical values -8 to -1.
+        """
         if finetune < 0 or finetune > 15:
             raise ValueError(f"Invalid finetune {finetune} (expected 0-15).")
         smp = self.get_sample(sample_idx)
@@ -810,6 +832,7 @@ class MODSong(Song):
         if sample_idx <= 0 or sample_idx > MODSong.SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
         self.samples[sample_idx - 1] = sample
+        self._update_n_actual_samples()
 
     def copy_sample_from(self, src: 'MODSong', src_sample_idx: int, dst_sample_idx: int = 0) -> int:
         """
@@ -840,6 +863,7 @@ class MODSong(Song):
                 raise ValueError("Couldn't find an empty slot for the new sample.")
 
         self.samples[dst_sample_idx - 1] = new_smp
+        self._update_n_actual_samples()
         return dst_sample_idx
 
     def copy_samples_from(self, src: 'MODSong', src_sample_indices: list[int]) -> list[int]:
@@ -864,6 +888,7 @@ class MODSong(Song):
             raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
 
         self.samples[sample_idx - 1] = Sample()
+        self._update_n_actual_samples()
 
     def keep_sample(self, sample_idx: int):
         """
@@ -879,6 +904,16 @@ class MODSong(Song):
         for s in range(MODSong.SAMPLES):
             if s + 1 != sample_idx:
                 self.samples[s] = Sample()
+        self._update_n_actual_samples()
+
+    def get_used_samples(self) -> list[int]:
+        used = set()
+        for pattern in self.patterns:
+            for channel in pattern.data:
+                for note in channel:
+                    if note.instrument_idx > 0:
+                        used.add(note.instrument_idx)
+        return sorted(used)
     
     '''
     -------------------------------------
@@ -924,9 +959,9 @@ class MODSong(Song):
 
     def add_pattern(self) -> int:
         """
-        Creates a brand new pattern and adds it to the song sequence.
+        Creates a brand new pattern, appends it to the pattern pool, and adds that pool index to the song sequence.
 
-        :return: The index of the new pattern.
+        :return: The new pattern pool index.
         """
         self.patterns.append(Pattern(MODSong.ROWS, MODSong.CHANNELS))
         n = len(self.patterns) - 1
@@ -1149,13 +1184,13 @@ class MODSong(Song):
 
     def set_portamento(self, pattern: int, channel: int, row: int, slide: int):
         """
-        Slides up or down the sample frequency by 'slide' notes per tick.
-        Therefore, the slide rate depends on the number of ticks per row.
+        Slides the current period up or down by the given amount on each tick.
+        The slide rate depends on the current ticks-per-row setting.
 
         :param pattern: The pattern index (in the sequence) to write to.
         :param channel: The channel index to write to, 0-based.
         :param row: The row index to write to, 0-based.
-        :param slide: The amount of notes to slide by, -255 to 255. 0 is ignored.
+        :param slide: The period delta per tick, -255 to 255. 0 is ignored.
         :return: None.
         """
         if slide < -255 or slide > 255:
