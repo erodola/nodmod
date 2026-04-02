@@ -295,22 +295,9 @@ class Instrument:
 
     @staticmethod
     def _note_str_to_idx(note: str | int) -> int:
-        if isinstance(note, int):
-            return note
-        s = note.strip().upper()
-        if len(s) != 3 or s[1] not in ('-', '#'):
-            raise ValueError(f"Invalid note format {note}. Expected like C-4 or F#3.")
-        pitch = s[:2]
-        try:
-            octave = int(s[2])
-        except ValueError as exc:
-            raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
-        period_seq = ['C-', 'C#', 'D-', 'D#', 'E-', 'F-', 'F#', 'G-', 'G#', 'A-', 'A#', 'B-']
-        if pitch not in period_seq:
-            raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
-        note_idx = period_seq.index(pitch)
-        idx = (octave - 1) * 12 + note_idx
-        return idx
+        from .song import Song
+
+        return Song.note_to_index(note)
 
     def clear_sample_map(self) -> None:
         self.sample_map = []

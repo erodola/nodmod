@@ -35,21 +35,7 @@ class XMSong(Song):
         return (self.flags & 0x01) == 1
     
     def _note_str_to_idx(self, note: str | int) -> int:
-        if isinstance(note, int):
-            return note
-        s = note.strip().upper()
-        if len(s) != 3 or s[1] not in ('-', '#'):
-            raise ValueError(f"Invalid note format {note}. Expected like C-4 or F#3.")
-        pitch = s[:2]
-        try:
-            octave = int(s[2])
-        except ValueError as exc:
-            raise ValueError(f"Invalid note octave {note}. Expected a single digit octave.") from exc
-        if pitch not in Song.PERIOD_SEQ:
-            raise ValueError(f"Invalid note name {note}. Expected C-, C#, D-, D#, E-, F-, F#, G-, G#, A-, A#, B-.")
-        note_idx = Song.PERIOD_SEQ.index(pitch)
-        idx = (octave - 1) * 12 + note_idx
-        return idx
+        return Song.note_to_index(note)
 
     def __init__(self):
         super().__init__()
