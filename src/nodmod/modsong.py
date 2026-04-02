@@ -929,10 +929,10 @@ class MODSong(Song):
             raise ValueError(f"MOD patterns have fixed 64 rows (got {n_rows}).")
 
 
-    def add_to_sequence(self, pattern_idx: int, pos: int | None = None) -> None:
+    def add_to_sequence(self, pattern_idx: int, sequence_position: int | None = None) -> None:
         if len(self.pattern_seq) + 1 > 128:
             raise ValueError(f"Pattern sequence too long ({len(self.pattern_seq) + 1}). MOD supports up to 128.")
-        super().add_to_sequence(pattern_idx, pos)
+        super().add_to_sequence(pattern_idx, sequence_position)
 
 
     def set_sequence(self, seq: list[int]) -> None:
