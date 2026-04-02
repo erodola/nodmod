@@ -1,3 +1,5 @@
+"""Public package exports for nodmod tracker song types and format handlers."""
+
 from .types import *
 from .song import *
 from .modsong import *

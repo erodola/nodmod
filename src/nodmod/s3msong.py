@@ -1,3 +1,5 @@
+"""Support for loading, editing, and saving PCM-based S3M modules."""
+
 from __future__ import annotations
 
 import copy
@@ -13,6 +15,12 @@ from nodmod import Song
 
 
 class S3MSong(Song):
+    """Scream Tracker 3 song format with a MOD-like sample-oriented API.
+
+    The implementation currently supports PCM instruments only. OPL/Adlib,
+    packed samples, and stereo samples are detected and rejected explicitly.
+    """
+
     ROWS = 64
     MAX_CHANNELS = 32
     MAX_SAMPLES = 99
@@ -20,14 +28,17 @@ class S3MSong(Song):
 
     @property
     def file_extension(self) -> str:
+        """File extension used when saving S3M songs."""
         return 's3m'
 
     @property
     def n_channels(self) -> int:
+        """Number of active channels exposed through the compact editing API."""
         return self._n_channels
 
     @n_channels.setter
     def n_channels(self, n: int) -> None:
+        """Resize the song to the requested compact channel count and rebuild S3M mappings."""
         if n < 1 or n > self.MAX_CHANNELS:
             raise ValueError(f"Invalid channel count {n} (expected 1-{self.MAX_CHANNELS}).")
         self._n_channels = n
@@ -37,6 +48,7 @@ class S3MSong(Song):
             self._resize_pattern_channels(pat, n)
 
     def __init__(self):
+        """Create an empty S3M song with one 64-row pattern and 16 channels."""
         super().__init__()
 
         self.sig1 = 0x1A
@@ -76,6 +88,7 @@ class S3MSong(Song):
         self.add_pattern()
 
     def _default_channel_settings(self, n_channels: int) -> list[int]:
+        """Build a 32-slot S3M channel-settings table for a compact channel count."""
         default_active = [0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15]
         settings = default_active[:n_channels]
         while len(settings) < n_channels:
@@ -83,20 +96,24 @@ class S3MSong(Song):
         return settings + [255] * (self.MAX_CHANNELS - n_channels)
 
     def _default_channel_setting_for_index(self, compact_index: int) -> int:
+        """Return the default raw S3M channel setting for a compact channel index."""
         return self._default_channel_settings(compact_index + 1)[compact_index]
 
     def _rebuild_channel_mappings(self) -> None:
+        """Recompute raw-to-compact channel mappings from the 32-slot S3M table."""
         self.raw_channel_slots = [idx for idx, value in enumerate(self.channel_settings) if value != 255]
         self.compact_to_raw_channel = list(self.raw_channel_slots)
         self.raw_to_compact_channel = {raw: compact for compact, raw in enumerate(self.compact_to_raw_channel)}
         self._n_channels = len(self.compact_to_raw_channel)
 
     def _new_pattern(self) -> Pattern:
+        """Create a new empty S3M pattern using S3M note objects."""
         pat = Pattern(self.ROWS, self.n_channels)
         pat.data = [[S3MNote() for _ in range(pat.n_rows)] for _ in range(pat.n_channels)]
         return pat
 
     def _resize_pattern_channels(self, pat: Pattern, n_channels: int) -> None:
+        """Resize a pattern to the requested channel count using blank S3M notes."""
         if pat.n_channels < n_channels:
             for _ in range(n_channels - pat.n_channels):
                 pat.data.append([S3MNote() for _ in range(pat.n_rows)])
@@ -105,9 +122,11 @@ class S3MSong(Song):
         pat.n_channels = n_channels
 
     def _update_n_actual_samples(self) -> None:
+        """Refresh the cached count of non-empty PCM sample slots."""
         self.n_actual_samples = sum(1 for sample in self.samples if len(sample.waveform) > 0)
 
     def copy(self) -> 'S3MSong':
+        """Create a deep copy of the song, including S3M-specific header state."""
         new_song = S3MSong()
         new_song.artist = self.artist
         new_song.songname = self.songname
@@ -143,6 +162,7 @@ class S3MSong(Song):
         return new_song
 
     def save(self, fname: str, verbose: bool = True):
+        """Save the song as a standard PCM S3M file."""
         if verbose:
             print(f'Saving to {fname}... ', end='', flush=True)
 
@@ -256,6 +276,7 @@ class S3MSong(Song):
             print('done.')
 
     def load(self, fname: str, verbose: bool = True):
+        """Load an S3M file, preserving S3M-specific metadata where possible."""
         if verbose:
             print(f'Loading {fname}... ', end='', flush=True)
 
@@ -362,6 +383,7 @@ class S3MSong(Song):
             print('done.')
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
+        """Compute per-row playback timestamps using S3M tempo and flow-control effects."""
         timestamps: list[list[tuple[float, int, int]]] = []
         speed = self.initial_speed
         bpm = self.initial_tempo
@@ -441,6 +463,7 @@ class S3MSong(Song):
         return timestamps
 
     def get_effective_row_count(self, sequence_idx: int) -> int:
+        """Return the played row count for a sequence position, including row delays."""
         pat = self._get_sequence_pattern(sequence_idx)
         played_rows = 0
         for row in range(pat.n_rows):
@@ -465,6 +488,7 @@ class S3MSong(Song):
         return played_rows
 
     def add_pattern(self, n_rows: int = ROWS) -> int:
+        """Append a new 64-row pattern and add it to the order list."""
         if n_rows != self.ROWS:
             raise ValueError(f"S3M patterns have fixed 64 rows (got {n_rows}).")
         if len(self.pattern_seq) + 1 > 256:
@@ -475,27 +499,32 @@ class S3MSong(Song):
         return pat_idx
 
     def add_to_sequence(self, pattern_idx: int, sequence_position: int | None = None) -> None:
+        """Insert a pattern index into the order list, enforcing the S3M 256-order limit."""
         if len(self.pattern_seq) + 1 > 256:
             raise ValueError(f"Pattern sequence too long ({len(self.pattern_seq) + 1}). S3M supports up to 256 orders.")
         super().add_to_sequence(pattern_idx, sequence_position)
 
     def set_sequence(self, seq: list[int]) -> None:
+        """Replace the order list, enforcing the S3M 256-order limit."""
         if len(seq) > 256:
             raise ValueError(f"Pattern sequence too long ({len(seq)}). S3M supports up to 256 orders.")
         super().set_sequence(seq)
 
     def clear_pattern(self, sequence_idx: int) -> None:
+        """Clear all notes in the pattern referenced by the given sequence position."""
         pat = self._get_sequence_pattern(sequence_idx)
         for channel in range(pat.n_channels):
             for row in range(pat.n_rows):
                 pat.data[channel][row] = S3MNote()
 
     def resize_pattern(self, sequence_idx: int, n_rows: int) -> None:
+        """Validate pattern size requests for S3M's fixed 64-row patterns."""
         if n_rows != self.ROWS:
             raise ValueError(f"S3M patterns have fixed 64 rows (got {n_rows}).")
         self._get_sequence_pattern(sequence_idx)
 
     def get_note(self, sequence_idx: int, row: int, channel: int) -> S3MNote:
+        """Return the note at a given sequence position, row, and compact channel."""
         pat = self._get_sequence_pattern(sequence_idx)
         if row < 0 or row >= pat.n_rows:
             raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
@@ -513,6 +542,20 @@ class S3MSong(Song):
         effect: str = "",
         volume: int | None = None,
     ) -> None:
+        """Write a note into a pattern slot.
+
+        If ``effect`` is omitted, only structural S3M effects such as tempo,
+        order jumps, and pattern breaks are preserved from the existing note.
+        If ``volume`` is ``None``, the existing S3M volume-column value is kept.
+
+        :param sequence_idx: The 0-based sequence index to modify.
+        :param channel: The 0-based compact channel index to modify.
+        :param row: The 0-based row index to modify.
+        :param instrument_idx: The 1-based sample index to write, or 0 for none.
+        :param period: Note text such as ``C-5`` or ``off``.
+        :param effect: S3M effect text, or ``''`` to preserve only structural effects.
+        :param volume: S3M volume-column value in ``0..64``, or ``None`` to preserve it.
+        """
         pat = self._get_sequence_pattern(sequence_idx)
         if row < 0 or row >= pat.n_rows:
             raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
@@ -532,16 +575,26 @@ class S3MSong(Song):
         pat.data[channel][row] = new_note
 
     def set_bpm(self, pattern: int, channel: int, row: int, bpm: int):
+        """Write an S3M tempo command at the requested pattern location."""
         if bpm < 32 or bpm > 255:
             raise ValueError(f"Invalid tempo {bpm} (expected 32-255).")
         self.set_effect(pattern, channel, row, f"T{bpm:02X}")
 
     def set_ticks_per_row(self, pattern: int, channel: int, row: int, ticks: int):
+        """Write an S3M speed command at the requested pattern location."""
         if ticks < 1 or ticks > 31:
             raise ValueError(f"Invalid ticks per row {ticks} (expected 1-31).")
         self.set_effect(pattern, channel, row, f"A{ticks:02X}")
 
     def add_channel(self, count: int = 1) -> None:
+        """Append one or more channels, allocating real S3M raw channel slots.
+
+        S3M stores channel state in a fixed 32-slot raw channel table. This method
+        finds unused raw slots, updates the serialized channel settings, and extends
+        every in-memory pattern with empty note columns.
+
+        :param count: Number of channels to add.
+        """
         if count <= 0:
             raise ValueError(f"Invalid channel count {count} (expected >=1).")
         if self.n_channels + count > self.MAX_CHANNELS:
@@ -558,6 +611,10 @@ class S3MSong(Song):
             self._rebuild_channel_mappings()
 
     def remove_channel(self, channel: int) -> None:
+        """Remove a compact channel and free its backing raw S3M channel slot.
+
+        :param channel: 0-based compact channel index to remove.
+        """
         if self.n_channels <= 1:
             raise ValueError("Cannot remove last channel (S3M requires at least 1).")
         if channel < 0 or channel >= self.n_channels:
@@ -570,6 +627,10 @@ class S3MSong(Song):
         self._rebuild_channel_mappings()
 
     def clear_channel(self, channel: int) -> None:
+        """Clear a channel across every pattern in the song.
+
+        :param channel: 0-based compact channel index to clear.
+        """
         if channel < 0 or channel >= self.n_channels:
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
         for pat in self.patterns:
@@ -577,6 +638,10 @@ class S3MSong(Song):
                 pat.data[channel][row] = S3MNote()
 
     def mute_channel(self, channel: int) -> None:
+        """Silence a channel while preserving structural effects such as jumps and tempo changes.
+
+        :param channel: 0-based compact channel index to mute.
+        """
         if channel < 0 or channel >= self.n_channels:
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
         for pat in self.patterns:
@@ -589,6 +654,15 @@ class S3MSong(Song):
                 pat.data[channel][row] = new_note
 
     def copy_sample_from(self, src: 'S3MSong', src_sample_idx: int, dst_sample_idx: int | None = None) -> int:
+        """Copy a sample slot from another S3M song.
+
+        If ``dst_sample_idx`` is omitted, the first empty destination slot is used.
+
+        :param src: Source S3M song.
+        :param src_sample_idx: 1-based source sample index.
+        :param dst_sample_idx: Optional 1-based destination sample index.
+        :return: The 1-based destination sample index.
+        """
         if src_sample_idx <= 0 or src_sample_idx > src.MAX_SAMPLES:
             raise IndexError(f"Invalid source sample index {src_sample_idx} (expected 1-{src.MAX_SAMPLES}).")
         if dst_sample_idx is not None and (dst_sample_idx <= 0 or dst_sample_idx > self.MAX_SAMPLES):
@@ -605,23 +679,47 @@ class S3MSong(Song):
         return dst_sample_idx
 
     def set_n_channels(self, n: int) -> None:
+        """Convenience wrapper around the channel-count property setter.
+
+        Resizing the channel count rebuilds the compact-to-raw S3M channel mapping
+        and resizes every in-memory pattern.
+
+        :param n: New compact channel count in ``1..32``.
+        """
         self.n_channels = n
 
     def get_sample(self, sample_idx: int) -> S3MSample:
+        """Return one S3M sample slot.
+
+        :param sample_idx: 1-based sample index.
+        :return: The ``S3MSample`` object stored in that slot.
+        """
         if sample_idx <= 0 or sample_idx > self.MAX_SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
         return self.samples[sample_idx - 1]
 
     def list_samples(self) -> list[S3MSample]:
+        """Return the fixed-size S3M sample bank.
+
+        Empty sample slots are included in the returned list.
+
+        :return: The ordered list of S3M sample slots.
+        """
         return self.samples
 
     def set_sample(self, sample_idx: int, sample: S3MSample) -> None:
+        """Replace one S3M sample slot.
+
+        :param sample_idx: 1-based sample index.
+        :param sample: Replacement sample object.
+        """
         if sample_idx <= 0 or sample_idx > self.MAX_SAMPLES:
             raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
         self.samples[sample_idx - 1] = sample
         self._update_n_actual_samples()
 
     def _load_pcm_instruments(self, data: bytes, fname: str) -> None:
+        """Load PCM instrument headers and sample bodies from an S3M file image."""
         self.samples = [S3MSample() for _ in range(self.MAX_SAMPLES)]
 
         for inst_idx, inst_offset in enumerate(self.instrument_offsets, start=1):
@@ -689,6 +787,7 @@ class S3MSong(Song):
         self._update_n_actual_samples()
 
     def _decode_sample_waveform(self, data: bytes, offset: int, byte_length: int, is_16bit: bool):
+        """Decode signed or unsigned S3M PCM sample data into an array object."""
         if offset == 0 or byte_length == 0:
             return array.array('h' if is_16bit else 'b')
         if offset + byte_length > len(data):
@@ -719,6 +818,7 @@ class S3MSong(Song):
         return array.array('b', (value - 128 for value in unsigned_waveform))
 
     def _load_patterns(self, data: bytes, fname: str) -> None:
+        """Load all packed S3M patterns from the file image into in-memory patterns."""
         self.patterns = [self._new_pattern() for _ in range(self.pattern_count)]
         for pat_idx, pat_offset in enumerate(self.pattern_offsets):
             if pat_offset == 0:
@@ -736,6 +836,7 @@ class S3MSong(Song):
             self._decode_pattern_data(self.patterns[pat_idx], packed_data)
 
     def _decode_pattern_data(self, pat: Pattern, packed_data: bytes) -> None:
+        """Decode one packed S3M pattern block into note objects."""
         row = 0
         pos = 0
         while row < self.ROWS and pos < len(packed_data):
@@ -788,11 +889,13 @@ class S3MSong(Song):
 
     @staticmethod
     def _align16(payload: bytearray) -> None:
+        """Pad a byte buffer to the next 16-byte paragraph boundary."""
         remainder = len(payload) % 16
         if remainder:
             payload.extend(b'\x00' * (16 - remainder))
 
     def _build_order_list_for_save(self) -> list[int]:
+        """Build the raw order list to serialize, preserving explicit S3M markers when possible."""
         raw = list(self.order_list_raw)
         if raw and self._normalized_order_list(raw) == self.pattern_seq:
             return raw
@@ -804,6 +907,7 @@ class S3MSong(Song):
         return order_list
 
     def _instrument_count_for_save(self) -> int:
+        """Return the number of instrument slots that must be serialized."""
         highest_non_empty = 0
         for idx, sample in enumerate(self.samples, start=1):
             if self._sample_slot_used(sample):
@@ -812,6 +916,7 @@ class S3MSong(Song):
 
     @staticmethod
     def _normalized_order_list(order_list: list[int]) -> list[int]:
+        """Strip skip and end markers from a raw S3M order list."""
         normalized: list[int] = []
         for order in order_list:
             if order == 0xFF:
@@ -823,10 +928,12 @@ class S3MSong(Song):
 
     @staticmethod
     def _encode_text(text: str, length: int) -> bytes:
+        """Encode fixed-width S3M text fields using latin-1 with NUL padding."""
         raw = text.encode('latin-1', errors='replace')[:length]
         return raw.ljust(length, b'\x00')
 
     def _sample_slot_used(self, sample: S3MSample) -> bool:
+        """Return True if a sample slot contains any serializable S3M content."""
         return (
             sample.instrument_type != 0
             or len(sample.waveform) > 0
@@ -835,6 +942,7 @@ class S3MSong(Song):
         )
 
     def _validate_sample_for_save(self, sample: S3MSample, sample_idx: int) -> None:
+        """Reject unsupported S3M sample features before serialization."""
         if getattr(sample, 'instrument_type', 0) in {2, 3, 4, 5, 6, 7}:
             raise NotImplementedError(f"Adlib S3M instruments are not supported yet (sample {sample_idx}).")
         if sample.pack != 0:
@@ -843,6 +951,7 @@ class S3MSong(Song):
             raise NotImplementedError(f"Stereo S3M samples are not supported yet (sample {sample_idx}).")
 
     def _build_instrument_header(self, sample: S3MSample, sample_paragraph: int) -> bytes:
+        """Assemble the 80-byte S3M instrument header for one sample slot."""
         header = bytearray(80)
         instrument_type = 1 if self._sample_slot_used(sample) and (sample.instrument_type == 1 or len(sample.waveform) > 0) else 0
         if sample.instrument_type in {2, 3, 4, 5, 6, 7}:
@@ -877,10 +986,12 @@ class S3MSong(Song):
         return bytes(header)
 
     def _sample_byte_length(self, sample: S3MSample) -> int:
+        """Return the serialized sample-data length in bytes."""
         unit_size = 2 if sample.is_16bit else 1
         return len(sample.waveform) * unit_size
 
     def _encode_sample_data(self, sample: S3MSample) -> bytes:
+        """Encode an in-memory waveform into S3M PCM bytes."""
         if len(sample.waveform) == 0:
             return b''
         if sample.is_16bit:
@@ -901,6 +1012,7 @@ class S3MSong(Song):
         return unsigned_waveform.tobytes()
 
     def _encode_pattern_block(self, pat: Pattern) -> bytes:
+        """Encode a pattern into one packed S3M pattern block."""
         packed_data = bytearray()
         for row in range(pat.n_rows):
             for channel in range(pat.n_channels):
@@ -933,6 +1045,7 @@ class S3MSong(Song):
 
     @staticmethod
     def _encode_note_value(period: str) -> int:
+        """Convert a note string such as 'C-5' or 'off' into an S3M note byte."""
         period = period.strip().upper()
         if period == '':
             return 255
@@ -949,6 +1062,7 @@ class S3MSong(Song):
 
     @staticmethod
     def _encode_effect(effect: str) -> tuple[int, int]:
+        """Convert a textual S3M effect into command and info bytes."""
         effect = effect.strip().upper()
         if effect == '':
             return 0, 0
@@ -961,6 +1075,7 @@ class S3MSong(Song):
 
     @staticmethod
     def _decode_note_value(note_value: int) -> str:
+        """Convert an S3M note byte into a note string or an empty slot marker."""
         if note_value == 255:
             return ''
         if note_value == 254:
@@ -973,9 +1088,11 @@ class S3MSong(Song):
 
     @staticmethod
     def _decode_text(raw: bytes) -> str:
+        """Decode an S3M fixed-width text field."""
         return raw.split(b'\x00', 1)[0].decode('latin-1', errors='replace').rstrip(' ')
 
     def _preserved_effect(self, effect: str) -> str:
+        """Return only the structural effects that must survive destructive edits."""
         effect = self._effect_text(effect)
         if effect == '':
             return ''
