@@ -1,18 +1,23 @@
-# 🎹 NodMOD
+# NodMOD
 
-NodMOD is a Python library for manipulating MOD / XM files produced with the music trackers of yore.
+NodMOD is a Python library for reading, editing, and writing tracker modules.
 
-The library simplifies core operations, abstracting away from the intricacies of the MOD format.
+It currently focuses on two classic formats:
 
- - Load and save MOD / XM files
- - Create, edit, duplicate, and delete patterns
- - Load WAV samples with automatic bitrate conversion
- - Full editing, down to the individual notes and effects
- - Render the song as WAV
+- MOD
+- XM
 
-You can find thousands of open-source songs at [The Mod Archive](https://modarchive.org/) or [Amiga Music Preservation](https://amp.dascene.net/), among others.
+The project is built around direct programmatic editing. You load or create a song, manipulate patterns, notes, samples, instruments, and effects in Python, then save the result back to disk.
 
-Suggested players are [XMPlay](https://www.un4seen.com/) (Windows), [Qmmp](https://qmmp.ylsoftware.com/) (Linux), [MilkyTracker](https://milkytracker.org/downloads/) (MacOS).
+## What It Does
+
+- Load MOD and XM files
+- Save edited or newly created MOD and XM files
+- Create, duplicate, resize, clear, and reorder patterns
+- Edit notes, effects, rows, channels, samples, and XM instruments
+- Import WAV audio into MOD samples or XM instrument samples
+- Export human-readable ASCII dumps for inspection
+- Render modules to WAV through external tools when available
 
 ## Installation
 
@@ -70,27 +75,28 @@ song.set_global_volume(0, 0, 0, 64)
 song.save("music/lead.xm")
 ```
 
-## API Notes
+## Core Model
 
-- `add_pattern()` returns a pattern pool index, then also appends that pattern to the song sequence. Most note-editing methods take a sequence index.
-- XM instrument indices and XM sample indices are 1-based. MOD sample indices are also 1-based.
-- `MODSong.load_sample()`, `MODSong.load_sample_from_raw()`, and `MODSong.copy_sample_from()` use `None` to auto-pick the next empty sample slot.
-- MOD sample finetune uses the raw tracker nibble `0..15`; musically, values `8..15` represent `-8..-1`.
-- XM sample finetune is signed `-128..127`.
+At a high level, the library exposes a small set of central objects:
 
-## Indexing Rules
+- `MODSong` for MOD modules
+- `XMSong` for XM modules
+- `Pattern` for pattern data
+- `Note` and `XMNote` for note cells
+- `Sample` and `XMSample` for waveform data
+- `Instrument` for XM instruments and sample maps
 
-- Sequence indices are 0-based positions in `pattern_seq`.
-- Sequence insertion positions are 0-based and may be equal to `len(pattern_seq)`.
-- Pattern indices are 0-based indices in `patterns`.
-- Row indices and channel indices are 0-based.
-- Note indices are 0-based in the range `0..95` and map to `C-1..B-8`.
-- MOD sample indices are 1-based in the range `1..31`.
-- XM instrument indices are 1-based.
-- XM sample indices are 1-based within each instrument.
-- XM sample-map getters and setters use public 1-based sample indices even though the internal storage is 0-based.
+The API is intentionally close to tracker structure rather than trying to hide it behind a higher-level composition DSL.
 
-Equivalent out-of-range indexing mistakes raise `IndexError`. Malformed note strings and other non-index value-domain problems raise `ValueError`.
+## Format Notes
+
+- MOD notes reference samples directly.
+- XM notes reference instruments, and instruments contain samples.
+- MOD sample slots are 1-based in the public API.
+- XM instrument indices and XM sample indices are 1-based in the public API.
+- Pattern order and pattern storage are separate concepts, as they are in tracker files.
+
+For most day-to-day use, the practical rule is simple: sequence positions, rows, and channels behave like normal Python indices, while tracker sample and instrument slots follow tracker conventions.
 
 ## Extras
 
@@ -100,7 +106,7 @@ ASCII dumps are available for both formats:
 song.save_ascii("music/debug.txt")
 ```
 
-Rendering can target mono or multi-channel output when `openmpt123` is available:
+Rendering can target mono or multi-channel output when `openmpt123` or a compatible `ffmpeg` build is available:
 
 ```python
 song.render("music/render.wav", channels=2)
@@ -108,21 +114,29 @@ song.render("music/render.wav", channels=2)
 
 ## Requirements
 
-- Python 3.11+
-- Pydub 0.25.1+
-- (*optional*) [ffmpeg](https://ffmpeg.org/download.html) with the `--enable-libopenmpt` configuration is required to render MOD files as WAV.
+- Python 3.11
+- pydub 0.25.1+
+- Optional: `openmpt123` or `ffmpeg` for WAV rendering
 
-## How you can help
+## Project Status
 
-We seek to expand the library in several ways:
+This is an editing-focused library, not yet a full tracker toolkit. The codebase is strongest in direct manipulation of existing songs and in generating small-to-medium scripted edits. The public API is still evolving.
 
- - Add support for other formats: IT, S3M, MED, etc.
- - More advanced functions for composing music
- - Build a script language
- - Improve usability
+## Contributing
 
-Contributions are welcome through dm or pull requests.
+Useful contributions include:
+
+- bug fixes and behavioral cleanup
+- stronger round-trip coverage for MOD and XM files
+- better public examples
+- support for more tracker operations and formats
+
+## Reference Material
+
+Large collections of legal-to-study modules can be found at [The Mod Archive](https://modarchive.org/) and [Amiga Music Preservation](https://amp.dascene.net/).
+
+Good players and editors for checking output include [XMPlay](https://www.un4seen.com/), [Qmmp](https://qmmp.ylsoftware.com/), and [MilkyTracker](https://milkytracker.org/downloads/).
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE).
