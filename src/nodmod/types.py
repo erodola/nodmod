@@ -244,10 +244,14 @@ class S3MSample(Sample):
         self.filename = ""
         self.c2spd = 8363
         self.pack = 0
+        self.flags = 0
         self.is_16bit = False
         self.is_stereo = False
         self.dsk = 0
-        self._reserved: bytes = b''
+        self.sample_offset = 0
+        self._reserved_byte = 0
+        self._internal: bytes = b'\x00' * 12
+        self._signature = "SCRS"
 
 
 class EnvelopePoint:

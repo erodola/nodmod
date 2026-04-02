@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import copy
+import array
 import os
 import struct
+import sys
 
 from nodmod import Pattern
 from nodmod import S3MNote
@@ -237,7 +239,7 @@ class S3MSong(Song):
             self.pattern_seq.append(order)
 
         self.samples = [S3MSample() for _ in range(self.MAX_SAMPLES)]
-        self.n_actual_samples = 0
+        self._load_pcm_instruments(data, fname)
 
         if verbose:
             print('done.')
@@ -348,6 +350,102 @@ class S3MSong(Song):
             raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
         self.samples[sample_idx - 1] = sample
         self._update_n_actual_samples()
+
+    def _load_pcm_instruments(self, data: bytes, fname: str) -> None:
+        self.samples = [S3MSample() for _ in range(self.MAX_SAMPLES)]
+
+        for inst_idx, inst_offset in enumerate(self.instrument_offsets, start=1):
+            if inst_offset + 80 > len(data):
+                raise NotImplementedError(
+                    f"Invalid S3M instrument pointer for instrument {inst_idx} in {os.path.basename(fname)}."
+                )
+
+            inst = data[inst_offset:inst_offset + 80]
+            inst_type = inst[0]
+            sample = S3MSample()
+            sample.filename = self._decode_text(inst[1:13])
+            sample.name = self._decode_text(inst[48:76])
+            sample._signature = inst[76:80].decode('latin-1', errors='replace')
+
+            if inst_type == 0:
+                self.samples[inst_idx - 1] = sample
+                continue
+
+            if 2 <= inst_type <= 7:
+                raise NotImplementedError(
+                    f"Adlib S3M instruments are not supported yet (instrument {inst_idx} in {os.path.basename(fname)})."
+                )
+
+            if inst_type != 1:
+                raise NotImplementedError(
+                    f"Unsupported S3M instrument type {inst_type} at instrument {inst_idx}."
+                )
+
+            para = (inst[13] << 16) | struct.unpack_from('<H', inst, 14)[0]
+            sample.sample_offset = para << 4
+            byte_length = struct.unpack_from('<I', inst, 16)[0]
+            loop_start = struct.unpack_from('<I', inst, 20)[0]
+            loop_end = struct.unpack_from('<I', inst, 24)[0]
+            sample.volume = inst[28]
+            sample._reserved_byte = inst[29]
+            sample.pack = inst[30]
+            sample.flags = inst[31]
+            sample.is_stereo = bool(sample.flags & 0x02)
+            sample.is_16bit = bool(sample.flags & 0x04)
+            sample.c2spd = struct.unpack_from('<I', inst, 32)[0]
+            sample._internal = bytes(inst[36:48])
+
+            if sample.pack != 0:
+                raise NotImplementedError(
+                    f"Packed S3M samples are not supported yet (instrument {inst_idx} in {os.path.basename(fname)})."
+                )
+            if sample.is_stereo:
+                raise NotImplementedError(
+                    f"Stereo S3M samples are not supported yet (instrument {inst_idx} in {os.path.basename(fname)})."
+                )
+
+            sample.waveform = self._decode_sample_waveform(data, sample.sample_offset, byte_length, sample.is_16bit)
+
+            unit_size = 2 if sample.is_16bit else 1
+            sample.repeat_point = loop_start // unit_size
+            if sample.flags & 0x01 and loop_end > loop_start:
+                sample.repeat_len = (loop_end - loop_start) // unit_size
+            else:
+                sample.repeat_len = 0
+
+            self.samples[inst_idx - 1] = sample
+
+        self._update_n_actual_samples()
+
+    def _decode_sample_waveform(self, data: bytes, offset: int, byte_length: int, is_16bit: bool):
+        if offset == 0 or byte_length == 0:
+            return array.array('h' if is_16bit else 'b')
+        if offset + byte_length > len(data):
+            raise NotImplementedError("Invalid S3M sample data pointer (truncated sample data).")
+        raw = data[offset:offset + byte_length]
+        if is_16bit:
+            if byte_length % 2 != 0:
+                raise NotImplementedError("Invalid S3M 16-bit sample length.")
+            if self.sample_type == 1:
+                waveform = array.array('h')
+                waveform.frombytes(raw)
+                if sys.byteorder != 'little':
+                    waveform.byteswap()
+                return waveform
+            unsigned_waveform = array.array('H')
+            unsigned_waveform.frombytes(raw)
+            if sys.byteorder != 'little':
+                unsigned_waveform.byteswap()
+            return array.array('h', (value - 32768 for value in unsigned_waveform))
+
+        if self.sample_type == 1:
+            waveform = array.array('b')
+            waveform.frombytes(raw)
+            return waveform
+
+        unsigned_waveform = array.array('B')
+        unsigned_waveform.frombytes(raw)
+        return array.array('b', (value - 128 for value in unsigned_waveform))
 
     @staticmethod
     def _decode_text(raw: bytes) -> str:
