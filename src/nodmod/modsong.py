@@ -592,26 +592,25 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def load_sample(self, fname: str, sample_idx: int = 0) -> tuple[int, Sample]:
+    def load_sample(self, fname: str, sample_idx: int | None = None) -> tuple[int, Sample]:
         """
         Loads a sample from a WAV file, and stores it at the given sample index.
 
         :param fname: The complete file path to the .wav file.
-        :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
-                           Use 0 to automatically use the next available slot.
+        :param sample_idx: The destination 1-based sample index, or None to use the next empty slot.
         :return: A tuple (int, Sample) containing:
                  - the index of the added sample, from 1 to 31
                  - the corresponding sample object
         """
-        if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}.")
+        if sample_idx is not None and (sample_idx <= 0 or sample_idx > MODSong.SAMPLES):
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
         
-        if sample_idx == 0:
+        if sample_idx is None:
             for i in range(MODSong.SAMPLES):
                 if len(self.samples[i].waveform) == 0:
                     sample_idx = i + 1
                     break
-            if sample_idx == 0:
+            if sample_idx is None:
                 raise ValueError("No empty sample slots available (1-31 are full).")
 
         self.samples[sample_idx - 1] = Sample()  # reset all attributes
@@ -625,7 +624,7 @@ class MODSong(Song):
 
         return sample_idx, self.samples[sample_idx - 1]
 
-    def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int = 0, input_sr: int = NTSC_SR) -> tuple[int, Sample]:
+    def load_sample_from_raw(self, raw_samples: list[float], sample_idx: int | None = None, input_sr: int = NTSC_SR) -> tuple[int, Sample]:
         """
         Loads a sample from a raw list of samples, and stores it at the given sample index.
         The raw samples should be a mono list of normalized float values in the range [-1.0, 1.0].
@@ -633,23 +632,21 @@ class MODSong(Song):
         If the sample rate is different from NTSC_SR, the samples will be resampled to NTSC_SR.
 
         :param raw_samples: Mono normalized PCM samples in the range [-1.0, 1.0].
-        :param sample_idx: The sample index to store the sample in the song, from 1 to 31. 
-                           Use 0 to automatically use the next available slot.
+        :param sample_idx: The destination 1-based sample index, or None to use the next empty slot.
         :param input_sr: The sample rate of the input raw samples (default NTSC_SR).
         :return: A tuple (int, Sample) containing:
                  - the index of the added sample, from 1 to 31
                  - the corresponding sample object
         """
-        if sample_idx < 0 or sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {sample_idx}.")
+        if sample_idx is not None and (sample_idx <= 0 or sample_idx > MODSong.SAMPLES):
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-31).")
         
-        # seek for an empty slot if sample_idx == 0
-        if sample_idx == 0:
+        if sample_idx is None:
             for i in range(MODSong.SAMPLES):
                 if len(self.samples[i].waveform) == 0:
                     sample_idx = i + 1
                     break
-            if sample_idx == 0:
+            if sample_idx is None:
                 raise ValueError("No empty sample slots available (1-31 are full).")
 
         self.samples[sample_idx - 1] = Sample()  # reset all attributes
@@ -834,15 +831,19 @@ class MODSong(Song):
         self.samples[sample_idx - 1] = sample
         self._update_n_actual_samples()
 
-    def copy_sample_from(self, src: 'MODSong', src_sample_idx: int, dst_sample_idx: int = 0) -> int:
+    def copy_sample_from(self, src: 'MODSong', src_sample_idx: int, dst_sample_idx: int | None = None) -> int:
         """
         Copies a single sample from another MODSong into this song.
-        Returns the destination 1-based sample index.
+
+        :param src: The source MOD song.
+        :param src_sample_idx: The 1-based sample index to copy from the source.
+        :param dst_sample_idx: The destination 1-based sample index, or None to use the next empty slot.
+        :return: The destination 1-based sample index.
         """
         if src_sample_idx <= 0 or src_sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {src_sample_idx}")
-        if dst_sample_idx < 0 or dst_sample_idx > MODSong.SAMPLES:
-            raise IndexError(f"Invalid sample index {dst_sample_idx}")
+            raise IndexError(f"Invalid source sample index {src_sample_idx} (expected 1-31).")
+        if dst_sample_idx is not None and (dst_sample_idx <= 0 or dst_sample_idx > MODSong.SAMPLES):
+            raise IndexError(f"Invalid destination sample index {dst_sample_idx} (expected 1-31).")
 
         src_smp = src.samples[src_sample_idx - 1]
         new_smp = Sample()
@@ -854,12 +855,12 @@ class MODSong(Song):
         new_smp.waveform = src_smp.waveform.__class__(src_smp.waveform.typecode, src_smp.waveform)
         new_smp.tune = src_smp.tune
 
-        if dst_sample_idx == 0:
+        if dst_sample_idx is None:
             for i in range(MODSong.SAMPLES):
                 if len(self.samples[i].waveform) == 0:
                     dst_sample_idx = i + 1
                     break
-            if dst_sample_idx == 0:
+            if dst_sample_idx is None:
                 raise ValueError("Couldn't find an empty slot for the new sample.")
 
         self.samples[dst_sample_idx - 1] = new_smp
@@ -873,7 +874,7 @@ class MODSong(Song):
         """
         new_indices: list[int] = []
         for idx in src_sample_indices:
-            new_indices.append(self.copy_sample_from(src, idx, 0))
+            new_indices.append(self.copy_sample_from(src, idx, None))
         return new_indices
 
     def remove_sample(self, sample_idx: int):
