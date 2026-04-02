@@ -143,7 +143,117 @@ class S3MSong(Song):
         return new_song
 
     def save(self, fname: str, verbose: bool = True):
-        raise NotImplementedError("S3M save support is not implemented yet.")
+        if verbose:
+            print(f'Saving to {fname}... ', end='', flush=True)
+
+        order_list = self._build_order_list_for_save()
+        instrument_count = self._instrument_count_for_save()
+        pattern_count = len(self.patterns)
+        has_panning = len(self.default_panning) == 32 and self.default_pan_flag == 252
+        default_pan_flag = 252 if has_panning else 0
+
+        header_size = 96 + len(order_list) + 2 * instrument_count + 2 * pattern_count + (32 if has_panning else 0)
+        payload = bytearray(header_size)
+
+        order_offset = 96
+        instrument_ptr_offset = order_offset + len(order_list)
+        pattern_ptr_offset = instrument_ptr_offset + 2 * instrument_count
+        panning_offset = pattern_ptr_offset + 2 * pattern_count
+
+        payload[order_offset:order_offset + len(order_list)] = bytes(order_list)
+        if has_panning:
+            payload[panning_offset:panning_offset + 32] = bytes(self.default_panning)
+
+        self._align16(payload)
+
+        instrument_parapointers: list[int] = []
+        pattern_parapointers: list[int] = []
+        instrument_header_positions: list[int] = []
+
+        for sample_idx in range(1, instrument_count + 1):
+            instrument_parapointers.append(len(payload) >> 4)
+            instrument_header_positions.append(len(payload))
+            payload.extend(b'\x00' * 80)
+
+        for pat in self.patterns:
+            self._align16(payload)
+            pattern_parapointers.append(len(payload) >> 4)
+            payload.extend(self._encode_pattern_block(pat))
+
+        sample_paragraphs: dict[int, int] = {}
+        for sample_idx in range(1, instrument_count + 1):
+            sample = self.samples[sample_idx - 1]
+            self._validate_sample_for_save(sample, sample_idx)
+            sample_bytes = self._encode_sample_data(sample)
+            if sample_bytes:
+                self._align16(payload)
+                sample_paragraphs[sample_idx] = len(payload) >> 4
+                payload.extend(sample_bytes)
+            else:
+                sample_paragraphs[sample_idx] = 0
+
+        for sample_idx in range(1, instrument_count + 1):
+            sample = self.samples[sample_idx - 1]
+            header = self._build_instrument_header(sample, sample_paragraphs[sample_idx])
+            pos = instrument_header_positions[sample_idx - 1]
+            payload[pos:pos + 80] = header
+
+        payload[0:28] = self._encode_text(self.songname, 28)
+        payload[28] = self.sig1
+        payload[29] = self.song_type
+        struct.pack_into('<H', payload, 30, self.reserved1)
+        struct.pack_into(
+            '<6H',
+            payload,
+            32,
+            len(order_list),
+            instrument_count,
+            pattern_count,
+            self.flags,
+            self.tracker_version,
+            self.sample_type,
+        )
+        payload[44:48] = b'SCRM'
+        payload[48] = self.global_volume
+        payload[49] = self.initial_speed
+        payload[50] = self.initial_tempo
+        payload[51] = self.master_volume
+        payload[52] = self.ultra_click_removal
+        payload[53] = default_pan_flag
+        payload[54:62] = self.reserved2[:8].ljust(8, b'\x00')
+        struct.pack_into('<H', payload, 62, self.special)
+        payload[64:96] = bytes(self.channel_settings[:32])
+
+        if instrument_count:
+            struct.pack_into(
+                '<' + 'H' * instrument_count,
+                payload,
+                instrument_ptr_offset,
+                *instrument_parapointers,
+            )
+        if pattern_count:
+            struct.pack_into(
+                '<' + 'H' * pattern_count,
+                payload,
+                pattern_ptr_offset,
+                *pattern_parapointers,
+            )
+
+        with open(fname, 'wb') as s3m_file:
+            s3m_file.write(payload)
+
+        self.order_count = len(order_list)
+        self.instrument_count = instrument_count
+        self.pattern_count = pattern_count
+        self.order_list_raw = list(order_list)
+        self.instrument_parapointers = instrument_parapointers
+        self.pattern_parapointers = pattern_parapointers
+        self.instrument_offsets = [ptr << 4 for ptr in instrument_parapointers]
+        self.pattern_offsets = [ptr << 4 for ptr in pattern_parapointers]
+        self.default_pan_flag = default_pan_flag
+
+        if verbose:
+            print('done.')
 
     def load(self, fname: str, verbose: bool = True):
         if verbose:
@@ -435,6 +545,7 @@ class S3MSong(Song):
             inst = data[inst_offset:inst_offset + 80]
             inst_type = inst[0]
             sample = S3MSample()
+            sample.instrument_type = inst_type
             sample.filename = self._decode_text(inst[1:13])
             sample.name = self._decode_text(inst[48:76])
             sample._signature = inst[76:80].decode('latin-1', errors='replace')
@@ -455,7 +566,7 @@ class S3MSong(Song):
 
             para = (inst[13] << 16) | struct.unpack_from('<H', inst, 14)[0]
             sample.sample_offset = para << 4
-            byte_length = struct.unpack_from('<I', inst, 16)[0]
+            length_units = struct.unpack_from('<I', inst, 16)[0]
             loop_start = struct.unpack_from('<I', inst, 20)[0]
             loop_end = struct.unpack_from('<I', inst, 24)[0]
             sample.volume = inst[28]
@@ -476,12 +587,12 @@ class S3MSong(Song):
                     f"Stereo S3M samples are not supported yet (instrument {inst_idx} in {os.path.basename(fname)})."
                 )
 
+            byte_length = length_units * (2 if sample.is_16bit else 1)
             sample.waveform = self._decode_sample_waveform(data, sample.sample_offset, byte_length, sample.is_16bit)
 
-            unit_size = 2 if sample.is_16bit else 1
-            sample.repeat_point = loop_start // unit_size
+            sample.repeat_point = loop_start
             if sample.flags & 0x01 and loop_end > loop_start:
-                sample.repeat_len = (loop_end - loop_start) // unit_size
+                sample.repeat_len = loop_end - loop_start
             else:
                 sample.repeat_len = 0
 
@@ -586,6 +697,179 @@ class S3MSong(Song):
             if note_value is not None:
                 note.period = self._decode_note_value(note_value)
             pat.data[compact_channel][row] = note
+
+    @staticmethod
+    def _align16(payload: bytearray) -> None:
+        remainder = len(payload) % 16
+        if remainder:
+            payload.extend(b'\x00' * (16 - remainder))
+
+    def _build_order_list_for_save(self) -> list[int]:
+        raw = list(self.order_list_raw)
+        if raw and self._normalized_order_list(raw) == self.pattern_seq:
+            return raw
+        order_list = list(self.pattern_seq)
+        if not order_list or order_list[-1] != 0xFF:
+            order_list.append(0xFF)
+        if len(order_list) > 256:
+            raise ValueError(f"Pattern sequence too long ({len(order_list)}). S3M supports up to 256 orders.")
+        return order_list
+
+    def _instrument_count_for_save(self) -> int:
+        highest_non_empty = 0
+        for idx, sample in enumerate(self.samples, start=1):
+            if self._sample_slot_used(sample):
+                highest_non_empty = idx
+        return max(self.instrument_count, highest_non_empty)
+
+    @staticmethod
+    def _normalized_order_list(order_list: list[int]) -> list[int]:
+        normalized: list[int] = []
+        for order in order_list:
+            if order == 0xFF:
+                break
+            if order == 0xFE:
+                continue
+            normalized.append(order)
+        return normalized
+
+    @staticmethod
+    def _encode_text(text: str, length: int) -> bytes:
+        raw = text.encode('latin-1', errors='replace')[:length]
+        return raw.ljust(length, b'\x00')
+
+    def _sample_slot_used(self, sample: S3MSample) -> bool:
+        return (
+            sample.instrument_type != 0
+            or len(sample.waveform) > 0
+            or sample.name != ''
+            or sample.filename != ''
+        )
+
+    def _validate_sample_for_save(self, sample: S3MSample, sample_idx: int) -> None:
+        if getattr(sample, 'instrument_type', 0) in {2, 3, 4, 5, 6, 7}:
+            raise NotImplementedError(f"Adlib S3M instruments are not supported yet (sample {sample_idx}).")
+        if sample.pack != 0:
+            raise NotImplementedError(f"Packed S3M samples are not supported yet (sample {sample_idx}).")
+        if sample.is_stereo:
+            raise NotImplementedError(f"Stereo S3M samples are not supported yet (sample {sample_idx}).")
+
+    def _build_instrument_header(self, sample: S3MSample, sample_paragraph: int) -> bytes:
+        header = bytearray(80)
+        instrument_type = 1 if self._sample_slot_used(sample) and (sample.instrument_type == 1 or len(sample.waveform) > 0) else 0
+        if sample.instrument_type in {2, 3, 4, 5, 6, 7}:
+            instrument_type = sample.instrument_type
+        header[0] = instrument_type
+        header[1:13] = self._encode_text(sample.filename, 12)
+        if instrument_type == 1:
+            header[13] = (sample_paragraph >> 16) & 0xFF
+            struct.pack_into('<H', header, 14, sample_paragraph & 0xFFFF)
+            struct.pack_into('<I', header, 16, len(sample.waveform))
+            loop_start = sample.repeat_point
+            loop_end = sample.repeat_point + sample.repeat_len
+            struct.pack_into('<I', header, 20, loop_start)
+            struct.pack_into('<I', header, 24, loop_end)
+            header[28] = max(0, min(64, sample.volume))
+            header[29] = getattr(sample, '_reserved_byte', 0)
+            header[30] = sample.pack
+            flags = sample.flags & ~0x07
+            if sample.repeat_len > 0:
+                flags |= 0x01
+            if sample.is_stereo:
+                flags |= 0x02
+            if sample.is_16bit:
+                flags |= 0x04
+            header[31] = flags
+            struct.pack_into('<I', header, 32, sample.c2spd or 8363)
+            header[36:48] = getattr(sample, '_internal', b'\x00' * 12)[:12].ljust(12, b'\x00')
+            header[76:80] = getattr(sample, '_signature', 'SCRS').encode('latin-1', errors='replace')[:4].ljust(4, b'\x00')
+        else:
+            header[76:80] = getattr(sample, '_signature', 'SCRS').encode('latin-1', errors='replace')[:4].ljust(4, b'\x00')
+        header[48:76] = self._encode_text(sample.name, 28)
+        return bytes(header)
+
+    def _sample_byte_length(self, sample: S3MSample) -> int:
+        unit_size = 2 if sample.is_16bit else 1
+        return len(sample.waveform) * unit_size
+
+    def _encode_sample_data(self, sample: S3MSample) -> bytes:
+        if len(sample.waveform) == 0:
+            return b''
+        if sample.is_16bit:
+            if self.sample_type == 1:
+                waveform = array.array('h', (int(value) for value in sample.waveform))
+                if sys.byteorder != 'little':
+                    waveform.byteswap()
+                return waveform.tobytes()
+            unsigned_waveform = array.array('H', (max(0, min(65535, int(value) + 32768)) for value in sample.waveform))
+            if sys.byteorder != 'little':
+                unsigned_waveform.byteswap()
+            return unsigned_waveform.tobytes()
+
+        if self.sample_type == 1:
+            waveform = array.array('b', (max(-128, min(127, int(value))) for value in sample.waveform))
+            return waveform.tobytes()
+        unsigned_waveform = array.array('B', (max(0, min(255, int(value) + 128)) for value in sample.waveform))
+        return unsigned_waveform.tobytes()
+
+    def _encode_pattern_block(self, pat: Pattern) -> bytes:
+        packed_data = bytearray()
+        for row in range(pat.n_rows):
+            for channel in range(pat.n_channels):
+                note = pat.data[channel][row]
+                raw_channel = self.compact_to_raw_channel[channel]
+                have_note_inst = note.period != '' or note.instrument_idx != 0
+                have_volume = 0 <= getattr(note, 'volume', -1) <= 64
+                have_effect = self._effect_text(note.effect) != ''
+                if not have_note_inst and not have_volume and not have_effect:
+                    continue
+                what = raw_channel
+                if have_note_inst:
+                    what |= 0x20
+                if have_volume:
+                    what |= 0x40
+                if have_effect:
+                    what |= 0x80
+                packed_data.append(what)
+                if have_note_inst:
+                    packed_data.append(self._encode_note_value(note.period))
+                    packed_data.append(note.instrument_idx)
+                if have_volume:
+                    packed_data.append(note.volume)
+                if have_effect:
+                    command, info = self._encode_effect(note.effect)
+                    packed_data.append(command)
+                    packed_data.append(info)
+            packed_data.append(0)
+        return struct.pack('<H', len(packed_data) + 2) + packed_data
+
+    @staticmethod
+    def _encode_note_value(period: str) -> int:
+        period = period.strip().upper()
+        if period == '':
+            return 255
+        if period == 'OFF':
+            return 254
+        if len(period) != 3 or period[1] not in {'-', '#'}:
+            raise ValueError(f"Invalid S3M note format {period!r}.")
+        pitch = period[:2]
+        octave = int(period[2])
+        if octave < 0 or octave > 15:
+            raise ValueError(f"Invalid S3M note octave {period!r}.")
+        semitone = Song.PERIOD_SEQ.index(pitch)
+        return (octave << 4) | semitone
+
+    @staticmethod
+    def _encode_effect(effect: str) -> tuple[int, int]:
+        effect = effect.strip().upper()
+        if effect == '':
+            return 0, 0
+        if len(effect) != 3:
+            raise ValueError(f"Invalid S3M effect format {effect!r}.")
+        command = ord(effect[0]) - ord('A') + 1
+        if command < 1 or command > 26:
+            raise ValueError(f"Invalid S3M effect command {effect!r}.")
+        return command, int(effect[1:], 16)
 
     @staticmethod
     def _decode_note_value(note_value: int) -> str:

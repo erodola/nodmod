@@ -36,9 +36,11 @@ def _build_s3m_with_one_instrument(inst_type: int, sample_type: int, flags: int,
         sample_paragraph = 0x0020
         inst[13] = (sample_paragraph >> 16) & 0xFF
         struct.pack_into("<H", inst, 14, sample_paragraph & 0xFFFF)
-        struct.pack_into("<I", inst, 16, len(sample_bytes))
-        struct.pack_into("<I", inst, 20, 1 if len(sample_bytes) > 1 else 0)
-        struct.pack_into("<I", inst, 24, len(sample_bytes))
+        unit_size = 2 if (flags & 0x04) else 1
+        sample_length = len(sample_bytes) // unit_size
+        struct.pack_into("<I", inst, 16, sample_length)
+        struct.pack_into("<I", inst, 20, 1 if sample_length > 1 else 0)
+        struct.pack_into("<I", inst, 24, sample_length)
         inst[28] = 40
         inst[29] = 0
         inst[30] = 0

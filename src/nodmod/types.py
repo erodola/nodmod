@@ -241,6 +241,7 @@ class S3MSample(Sample):
 
     def __init__(self):
         super().__init__()
+        self.instrument_type = 0
         self.filename = ""
         self.c2spd = 8363
         self.pack = 0
