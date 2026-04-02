@@ -78,10 +78,12 @@ class XMSong(Song):
             raise ValueError(f"Invalid default tempo {bpm} (expected 32-255).")
         self.default_tempo = bpm
 
-    def set_song_restart(self, pos: int) -> None:
-        if pos < 0 or pos >= len(self.pattern_seq):
-            raise IndexError(f"Invalid song restart position {pos} (expected 0-{len(self.pattern_seq)-1}).")
-        self.song_restart = pos
+    def set_song_restart(self, song_restart_position: int) -> None:
+        if song_restart_position < 0 or song_restart_position >= len(self.pattern_seq):
+            raise IndexError(
+                f"Invalid song restart position {song_restart_position} (expected 0-{len(self.pattern_seq)-1})."
+            )
+        self.song_restart = song_restart_position
 
     def set_linear_frequency(self, on: bool) -> None:
         if on:
@@ -1382,24 +1384,24 @@ class XMSong(Song):
 
     def set_note(
         self,
-        pattern: int,
+        sequence_idx: int,
         channel: int,
         row: int,
-        instrument: int,
+        instrument_idx: int,
         period: str,
         effect: str = "",
         vol_cmd: str | None = None,
         vol_val: int | None = None,
     ):
         """
-        Writes an XM note in the given pattern, channel and row.
+        Writes an XM note in the given sequence pattern, channel, and row.
         If no effect is given and the current note already has a speed effect, leaves it unchanged.
         If vol_cmd and vol_val are omitted, preserves the existing volume column.
 
-        :param pattern: The pattern index (in the sequence) to write to.
+        :param sequence_idx: The 0-based sequence index to write to.
         :param channel: The channel index to write to, 0-based.
         :param row: The row index to write to, 0-based.
-        :param instrument: The instrument index to write.
+        :param instrument_idx: The 1-based instrument index to write.
         :param period: The note period (pitch) to write, e.g. "C-4".
         :param effect: The note effect, e.g. "ED1".
         :param vol_cmd: Volume column command (e.g. 'v', 'd', 'c', etc.), or None to keep existing.
@@ -1407,10 +1409,10 @@ class XMSong(Song):
         :return: None.
         """
 
-        if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
-        pat = self.patterns[self.pattern_seq[pattern]]
+        pat = self.patterns[self.pattern_seq[sequence_idx]]
 
         if row < 0 or row >= pat.n_rows:
             raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
@@ -1425,7 +1427,7 @@ class XMSong(Song):
             effect = self._preserved_effect(cur_efx)
 
         new_note = XMNote()
-        new_note.instrument_idx = instrument
+        new_note.instrument_idx = instrument_idx
         new_note.period = period
         new_note.effect = effect
 
@@ -1484,19 +1486,19 @@ class XMSong(Song):
             for r in range(pat.n_rows):
                 pat.data[channel][r] = XMNote()
 
-    def get_note(self, pattern_in_song: int, row: int, channel: int) -> XMNote:
+    def get_note(self, sequence_idx: int, row: int, channel: int) -> XMNote:
         """
-        Returns the XMNote object at the given pattern, row and channel.
+        Returns the XMNote object at the given sequence pattern, row, and channel.
 
-        :param pattern_in_song: The pattern index (in the sequence) to read from.
+        :param sequence_idx: The 0-based sequence index to read from.
         :param row: The row index to read from, 0-based.
         :param channel: The channel index to read from, 0-based.
         :return: The XMNote object.
         """
-        if pattern_in_song < 0 or pattern_in_song >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern_in_song}")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
-        pat = self.patterns[self.pattern_seq[pattern_in_song]]
+        pat = self.patterns[self.pattern_seq[sequence_idx]]
 
         if row < 0 or row >= pat.n_rows:
             raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
@@ -2094,16 +2096,16 @@ class XMSong(Song):
         super().set_sequence(seq)
 
 
-    def resize_pattern(self, pattern: int, n_rows: int) -> None:
+    def resize_pattern(self, sequence_idx: int, n_rows: int) -> None:
         """
-        Resizes a pattern in the sequence to the given number of rows (1-256).
+        Resizes a sequence pattern to the given number of rows (1-256).
         Truncates or extends with empty notes as needed.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
         if n_rows < 1 or n_rows > 256:
             raise ValueError(f"Invalid row count {n_rows} (expected 1-256).")
-        p = self.pattern_seq[pattern]
+        p = self.pattern_seq[sequence_idx]
         pat = self.patterns[p]
         if n_rows == pat.n_rows:
             return
@@ -2116,18 +2118,18 @@ class XMSong(Song):
         pat.n_rows = n_rows
 
 
-    def clear_pattern(self, pattern: int):
+    def clear_pattern(self, sequence_idx: int):
         """
-        Clears completely a specified pattern.
+        Clears completely a specified sequence pattern.
         The pattern is not removed from the song sequence, but all the notes are set to empty.
 
-        :param pattern: The pattern index (within the song sequence) to be cleared.
+        :param sequence_idx: The 0-based sequence index to clear.
         :return: None.
         """
-        if pattern < 0 or pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
-        p = self.pattern_seq[pattern]
+        p = self.pattern_seq[sequence_idx]
         pat = self.patterns[p]
         for r in range(pat.n_rows):
             for c in range(pat.n_channels):
@@ -2164,23 +2166,23 @@ class XMSong(Song):
                         used.add(note.instrument_idx)
         return sorted(used)
 
-    def get_effective_row_count(self, pattern: int, include_loops: bool = True) -> int:
+    def get_effective_row_count(self, sequence_idx: int, include_loops: bool = True) -> int:
         """
-        Returns the effective number of rows that get played in a pattern.
+        Returns the effective number of rows that get played in a sequence pattern.
         Accounts for position jumps, loops, and breaks.
 
         TODO: do a separate version for the entire song
 
-        :param pattern: The pattern index (within the song sequence).
+        :param sequence_idx: The 0-based sequence index to inspect.
         :param include_loops: True to also count the rows that get played in loops.
         :return: The effective number of rows that gets played in the pattern.
         """
-        if pattern >= len(self.pattern_seq):
-            raise IndexError(f"Invalid pattern index {pattern} (expected 0-{len(self.patterns)-1}).")
+        if sequence_idx < 0 or sequence_idx >= len(self.pattern_seq):
+            raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         loop_start_row = 0  # used by E6x effect
 
-        data = copy.deepcopy(self.patterns[self.pattern_seq[pattern]].data)
+        data = copy.deepcopy(self.patterns[self.pattern_seq[sequence_idx]].data)
         n_channels = len(data)
         n_rows = len(data[0]) if data else 0
 
