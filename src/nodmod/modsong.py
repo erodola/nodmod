@@ -294,19 +294,10 @@ class MODSong(Song):
         :param verbose: False for silent saving.
         :return: None.
         """
-
         if verbose:
             print(f'Saving to {fname}... ', end='', flush=True)
-
         with open(fname, 'w', encoding='ascii') as file:
-
-            for p in [self.patterns[i] for i in self.pattern_seq]:
-                for r in range(MODSong.ROWS):
-                    for c in range(MODSong.CHANNELS):
-                        file.write(f"| {p.data[c][r]} ")
-                    file.write('|\n')
-                file.write('\n')
-
+            file.write(self.to_ascii())
         if verbose:
             print('done.')
 

@@ -315,6 +315,51 @@ class Song(ABC):
         if hasattr(self, 'restart_position'):
             info['restart_position'] = getattr(self, 'restart_position')
         return info
+
+    def _ascii_pattern_entries(self, sequence_only: bool) -> list[tuple[int | None, int]]:
+        """Build pattern references for ASCII rendering."""
+        if sequence_only:
+            return [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
+        return [(None, pat_idx) for pat_idx in range(len(self.patterns))]
+
+    def to_ascii(self, *, sequence_only: bool = True, include_headers: bool = False) -> str:
+        """Return a deterministic tracker-style ASCII dump of pattern note cells.
+
+        :param sequence_only: True to dump pattern order entries, False for full pattern pool.
+        :param include_headers: True to include per-pattern metadata headers.
+        :return: The ASCII dump as a Python string.
+        """
+        lines: list[str] = []
+        entries = self._ascii_pattern_entries(sequence_only)
+
+        for sequence_idx, pattern_idx in entries:
+            pat = self.patterns[pattern_idx]
+            if include_headers:
+                if sequence_idx is None:
+                    lines.append(
+                        f"# Pattern pool {pattern_idx}: {pat.n_rows} rows, {pat.n_channels} channels"
+                    )
+                else:
+                    lines.append(
+                        f"# Pattern {sequence_idx} (unique pattern {pattern_idx}): "
+                        f"{pat.n_rows} rows, {pat.n_channels} channels"
+                    )
+            for row in range(pat.n_rows):
+                row_text = ""
+                for channel in range(pat.n_channels):
+                    row_text += f"| {pat.data[channel][row]} "
+                lines.append(f"{row_text}|")
+            lines.append("")
+        return "\n".join(lines)
+
+    def save_ascii(self, fname: str, verbose: bool = True):
+        """Write ``to_ascii()`` output to a file using ASCII encoding."""
+        if verbose:
+            print(f'Saving to {fname}... ', end='', flush=True)
+        with open(fname, 'w', encoding='ascii') as file:
+            file.write(self.to_ascii())
+        if verbose:
+            print('done.')
     
     '''
     -------------------------------------

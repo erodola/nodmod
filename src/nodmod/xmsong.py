@@ -180,20 +180,7 @@ class XMSong(Song):
             print(f'Saving to {fname}... ', end='', flush=True)
 
         with open(fname, 'w', encoding='ascii') as file:
-            for seq_idx, pat_idx in enumerate(self.pattern_seq):
-                pat = self.patterns[pat_idx]
-                n_rows = len(pat.data[0]) if pat.data else 0
-                n_channels = len(pat.data)
-                
-                # Write pattern header
-                file.write(f"# Pattern {seq_idx} (unique pattern {pat_idx}): "
-                           f"{n_rows} rows, {n_channels} channels\n")
-                
-                for r in range(n_rows):
-                    for c in range(n_channels):
-                        file.write(f"| {pat.data[c][r]} ")
-                    file.write('|\n')
-                file.write('\n')
+            file.write(self.to_ascii(sequence_only=True, include_headers=True))
 
         if verbose:
             print('done.')
