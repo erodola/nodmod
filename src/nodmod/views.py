@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ['CellView', 'RowView', 'SampleView', 'SongView']
+__all__ = ['CellView', 'RowView', 'EffectView', 'SampleView', 'SongView']
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,22 @@ class RowView:
     pattern_idx: int
     row: int
     cells: tuple[CellView, ...]
+
+
+@dataclass(frozen=True)
+class EffectView:
+    """Read-only snapshot of one effect cell and optional decoded payload."""
+
+    sequence_idx: int
+    pattern_idx: int
+    row: int
+    channel: int
+    raw: str
+    command: str | None
+    arg: int | None
+    x: int | None
+    y: int | None
+    extended_cmd: str | None
 
 
 @dataclass(frozen=True)

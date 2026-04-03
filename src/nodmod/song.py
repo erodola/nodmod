@@ -11,8 +11,9 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 
+from .effects import decode_mod_effect
 from .types import Note
-from .views import CellView, RowView, SampleView, SongView
+from .views import CellView, EffectView, RowView, SampleView, SongView
 
 __all__ = ['Song']
 
@@ -173,6 +174,49 @@ class Song(ABC):
                     row=row,
                     cells=cells,
                 )
+
+    def iter_effects(
+        self,
+        *,
+        sequence_only: bool = True,
+        include_empty: bool = False,
+        decoded: bool = True,
+    ):
+        """Yield immutable effect snapshots in deterministic sequence,row,channel order."""
+        for cell in self.iter_cells(sequence_only=sequence_only):
+            raw = cell.effect
+            if not include_empty and raw == '':
+                continue
+
+            command = None
+            arg = None
+            x = None
+            y = None
+            extended_cmd = None
+            if decoded and raw != '':
+                try:
+                    info = decode_mod_effect(raw)
+                except (TypeError, ValueError):
+                    info = None
+                if info is not None:
+                    command = info.command
+                    arg = info.arg
+                    x = info.x
+                    y = info.y
+                    extended_cmd = info.extended_cmd
+
+            yield EffectView(
+                sequence_idx=cell.sequence_idx,
+                pattern_idx=cell.pattern_idx,
+                row=cell.row,
+                channel=cell.channel,
+                raw=raw,
+                command=command,
+                arg=arg,
+                x=x,
+                y=y,
+                extended_cmd=extended_cmd,
+            )
 
     def iter_samples(self, *, include_empty: bool = True):
         """Yield immutable sample-slot snapshots for song formats with direct sample banks."""
