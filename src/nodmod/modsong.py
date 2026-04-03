@@ -767,6 +767,57 @@ class MODSong(Song):
         smp.repeat_point = max(0, start)
         smp.repeat_len = max(0, length)
 
+    def get_sample_pcm_i8(self, sample_idx: int) -> bytes:
+        """Return raw signed 8-bit PCM bytes for one MOD sample slot."""
+        smp = self.get_sample(sample_idx)
+        return smp.waveform.tobytes()
+
+    def set_sample_pcm_i8(
+        self,
+        sample_idx: int,
+        pcm_i8: bytes | bytearray | memoryview | array.array,
+        *,
+        reset_meta: bool = False,
+    ) -> None:
+        """Set one MOD sample waveform from raw signed 8-bit PCM bytes."""
+        smp = self.get_sample(sample_idx)
+
+        raw: bytes
+        if isinstance(pcm_i8, array.array):
+            if pcm_i8.typecode not in {'b', 'B'}:
+                raise TypeError(f"Invalid PCM array typecode {pcm_i8.typecode!r} (expected 'b' or 'B').")
+            raw = pcm_i8.tobytes()
+        elif isinstance(pcm_i8, (bytes, bytearray, memoryview)):
+            raw = bytes(pcm_i8)
+        else:
+            raise TypeError(
+                f"Invalid pcm_i8 type {type(pcm_i8).__name__} "
+                "(expected bytes, bytearray, memoryview, or array.array)."
+            )
+
+        smp.waveform = array.array('b')
+        smp.waveform.frombytes(raw)
+
+        if reset_meta:
+            smp.name = ""
+            smp.finetune = 0
+            smp.volume = 64
+            smp.repeat_point = 0
+            smp.repeat_len = 0
+            smp.tune = ''
+
+        self._update_n_actual_samples()
+
+    def set_sample_loop_bytes(self, sample_idx: int, start_byte: int, length_byte: int) -> None:
+        """Set MOD sample loop points using explicit byte units."""
+        if start_byte < 0:
+            raise ValueError(f"Invalid loop start {start_byte} (expected >= 0).")
+        if length_byte < 0:
+            raise ValueError(f"Invalid loop length {length_byte} (expected >= 0).")
+        smp = self.get_sample(sample_idx)
+        smp.repeat_point = start_byte
+        smp.repeat_len = length_byte
+
 
     def validate_sample_loop(self, sample_idx: int) -> None:
         """Validate that a MOD sample loop stays within waveform bounds.
