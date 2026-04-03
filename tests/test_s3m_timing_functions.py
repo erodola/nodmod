@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from nodmod import S3MSong, Song
-from test_helpers import assert_true
+from .test_helpers import assert_true
 
 
 def test_s3m_speed_and_tempo_timestamps() -> None:

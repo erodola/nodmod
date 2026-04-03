@@ -23,36 +23,8 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
+          pip install -e . pytest
 
-      - name: Run CI-safe test scripts
-        shell: bash
+      - name: Run tests with pytest
         run: |
-          set -euo pipefail
-
-          tests=(
-            dev/test_ascii_api.py
-            dev/test_coordinate_api_consistency.py
-            dev/test_effect_codec.py
-            dev/test_helpers.py
-            dev/test_mod_basic.py
-            dev/test_mod_pcm_helpers.py
-            dev/test_mod_restart_position.py
-            dev/test_mod_sample_api.py
-            dev/test_probe_api.py
-            dev/test_s3m_basic.py
-            dev/test_s3m_pattern_decode.py
-            dev/test_s3m_roundtrip_write.py
-            dev/test_s3m_sample_api.py
-            dev/test_s3m_timing_functions.py
-            dev/test_song_base.py
-            dev/test_types_basic.py
-            dev/test_views_api.py
-            dev/test_xm_basic.py
-            dev/test_xm_instruments.py
-          )
-
-          for t in "${tests[@]}"; do
-            echo "Running $t"
-            python "$t"
-          done
+          pytest -q tests

@@ -1,7 +1,7 @@
 import array
 
 from nodmod import MODSong
-from test_helpers import assert_true, assert_raises_msg
+from .test_helpers import assert_true, assert_raises_msg
 
 
 def test_pcm_i8_bytes_roundtrip() -> None:

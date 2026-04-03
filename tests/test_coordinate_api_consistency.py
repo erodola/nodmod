@@ -1,5 +1,5 @@
 from nodmod import MODSong, S3MSong, XMSong
-from test_helpers import assert_true
+from .test_helpers import assert_true
 
 
 def _capture_exc(fn, *args, **kwargs):

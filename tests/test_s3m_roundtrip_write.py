@@ -6,7 +6,7 @@ import tempfile
 
 from nodmod import S3MSong
 from nodmod.types import S3MSample
-from test_helpers import assert_true, compare_s3m_songs, pick_files
+from .test_helpers import assert_true, compare_s3m_songs, pick_files
 
 
 def _make_generated_song() -> S3MSong:

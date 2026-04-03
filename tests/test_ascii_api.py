@@ -1,7 +1,7 @@
 import os
 
 from nodmod import MODSong, S3MSong, XMSong
-from test_helpers import assert_true
+from .test_helpers import assert_true
 
 
 def test_mod_ascii_matches_save(tmp_dir: str) -> None:

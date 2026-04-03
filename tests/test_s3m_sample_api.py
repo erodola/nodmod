@@ -6,7 +6,7 @@ import tempfile
 
 from nodmod import S3MSong
 from nodmod.types import S3MSample
-from test_helpers import assert_raises_msg, assert_true, pick_files
+from .test_helpers import assert_raises_msg, assert_true, pick_files
 
 
 def _build_s3m_with_one_instrument(inst_type: int, sample_type: int, flags: int, sample_bytes: bytes) -> bytes:

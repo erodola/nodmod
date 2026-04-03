@@ -3,7 +3,7 @@ import os
 import struct
 
 from nodmod import MODSong, S3MSong, XMSong, detect_format, probe_file
-from test_helpers import assert_true
+from .test_helpers import assert_true
 
 
 def _make_mod(path: str) -> None:

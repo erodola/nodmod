@@ -5,7 +5,7 @@ import struct
 import tempfile
 
 from nodmod import S3MSong
-from test_helpers import assert_true, pick_files
+from .test_helpers import assert_true, pick_files
 
 
 def _build_s3m_with_pattern() -> bytes:

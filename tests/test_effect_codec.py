@@ -6,7 +6,7 @@ from nodmod import (
     merge_xy,
     split_xy,
 )
-from test_helpers import assert_true, assert_raises_msg
+from .test_helpers import assert_true, assert_raises_msg
 
 
 def test_effect_codec_roundtrip() -> None:

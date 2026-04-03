@@ -2,7 +2,7 @@ import array
 import os
 from nodmod import XMSong
 from nodmod.types import XMSample
-from test_helpers import assert_true, assert_raises, with_temp_wav
+from .test_helpers import assert_true, assert_raises, with_temp_wav
 
 
 

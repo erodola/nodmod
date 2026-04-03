@@ -2,7 +2,7 @@ import array
 
 from nodmod import MODSong, S3MSong, XMSong
 from nodmod.types import XMSample
-from test_helpers import assert_true
+from .test_helpers import assert_true
 
 
 def test_cell_views_order_and_snapshot() -> None:

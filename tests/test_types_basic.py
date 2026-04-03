@@ -1,5 +1,5 @@
 from nodmod.types import MODNote, Note, S3MNote, XMNote
-from test_helpers import assert_true
+from .test_helpers import assert_true
 
 
 def test_types_basic() -> None:

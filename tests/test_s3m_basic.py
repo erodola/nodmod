@@ -4,7 +4,7 @@ import tempfile
 
 from nodmod import S3MSong
 from nodmod.types import S3MNote, S3MSample
-from test_helpers import assert_true, assert_raises_msg, pick_files
+from .test_helpers import assert_true, assert_raises_msg, pick_files
 
 
 def test_s3m_basic_types() -> None:

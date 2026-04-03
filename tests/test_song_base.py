@@ -1,5 +1,5 @@
 from nodmod import MODSong, XMSong
-from test_helpers import assert_true, assert_raises_msg
+from .test_helpers import assert_true, assert_raises_msg
 
 
 def test_song_base() -> None:

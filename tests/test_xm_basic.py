@@ -3,7 +3,7 @@ import os
 import random
 from nodmod import MODSong, XMSong
 from nodmod.types import XMNote, XMSample
-from test_helpers import assert_true, assert_raises, assert_raises_msg
+from .test_helpers import assert_true, assert_raises, assert_raises_msg
 
 
 def test_xm_basic_ops() -> None:
