@@ -133,6 +133,59 @@ Rendering can target mono or multi-channel output when `openmpt123` or a compati
 song.render("music/render.wav", channels=2)
 ```
 
+## New API Additions
+
+Recent enhancements add inspection-focused, additive APIs without breaking existing method signatures.
+
+```python
+from nodmod import MODSong
+
+song = MODSong()
+song.set_restart_position(3)            # normalized view
+raw = song.get_restart_position(raw=True)  # exact MOD header byte
+```
+
+```python
+# Canonical coordinate order: (sequence_idx, row, channel, ...)
+song.set_note_rc(0, 8, 1, 4, "C-4", "F06")
+song.set_effect_rc(0, 8, 1, "B01")
+cell = song.get_note_rc(0, 8, 1)
+```
+
+```python
+from nodmod import decode_mod_effect, encode_mod_effect
+
+info = decode_mod_effect("E6F")
+assert info.extended_cmd == "E6"
+assert encode_mod_effect("F", 125) == "F7D"
+```
+
+```python
+# Immutable snapshots for read-only analysis
+summary = song.view()
+cells = list(song.iter_cells(sequence_only=True))
+samples = list(song.iter_samples(include_empty=False))
+```
+
+```python
+# MOD raw signed 8-bit PCM helpers
+pcm = song.get_sample_pcm_i8(1)
+song.set_sample_pcm_i8(1, pcm, reset_meta=False)
+song.set_sample_loop_bytes(1, start_byte=128, length_byte=256)
+```
+
+```python
+from nodmod import probe_file
+
+probe = probe_file("music/demo.mod")
+print(probe.detected_format, probe.supported, probe.metadata)
+```
+
+```python
+# In-memory ASCII dump (no temp files needed)
+text = song.to_ascii(sequence_only=True, include_headers=False)
+```
+
 ## Requirements
 
 - Python 3.11

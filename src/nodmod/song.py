@@ -12,6 +12,7 @@ import subprocess
 from abc import ABC, abstractmethod
 
 from .types import Note
+from .views import CellView, SampleView, SongView
 
 __all__ = ['Song']
 
@@ -59,6 +60,60 @@ class Song(ABC):
     def set_songname(self, song_name: str):
         """Set the song title metadata string."""
         self.songname = song_name
+
+    def view(self) -> SongView:
+        """Return an immutable song-level snapshot."""
+        n_channels = getattr(self, 'n_channels', self.patterns[0].n_channels if self.patterns else 0)
+        return SongView(
+            format=self.file_extension,
+            songname=self.songname,
+            artist=self.artist,
+            sequence=tuple(self.pattern_seq),
+            n_patterns=len(self.patterns),
+            n_channels=n_channels,
+        )
+
+    def iter_cells(self, *, sequence_only: bool = True):
+        """Yield immutable cell snapshots in deterministic sequence,row,channel order."""
+        if sequence_only:
+            entries = [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
+        else:
+            entries = [(-1, pat_idx) for pat_idx in range(len(self.patterns))]
+        for sequence_idx, pattern_idx in entries:
+            pat = self.patterns[pattern_idx]
+            for row in range(pat.n_rows):
+                for channel in range(pat.n_channels):
+                    note = pat.data[channel][row]
+                    yield CellView(
+                        sequence_idx=sequence_idx,
+                        pattern_idx=pattern_idx,
+                        row=row,
+                        channel=channel,
+                        instrument_idx=getattr(note, 'instrument_idx', 0),
+                        period=getattr(note, 'period', ''),
+                        effect=getattr(note, 'effect', ''),
+                    )
+
+    def iter_samples(self, *, include_empty: bool = True):
+        """Yield immutable sample-slot snapshots for song formats with direct sample banks."""
+        if not hasattr(self, 'samples'):
+            return
+        sample_slots = getattr(self, 'samples')
+        if not isinstance(sample_slots, list):
+            return
+        for sample_idx, sample in enumerate(sample_slots, start=1):
+            length = len(getattr(sample, 'waveform', []))
+            if not include_empty and length == 0:
+                continue
+            yield SampleView(
+                sample_idx=sample_idx,
+                name=getattr(sample, 'name', ''),
+                length=length,
+                finetune=getattr(sample, 'finetune', 0),
+                volume=getattr(sample, 'volume', 0),
+                loop_start=getattr(sample, 'repeat_point', 0),
+                loop_length=getattr(sample, 'repeat_len', 0),
+            )
 
     @staticmethod
     def _effect_text(note_or_effect) -> str:
@@ -300,7 +355,7 @@ class Song(ABC):
             timestamps = []
         first_row = timestamps[0][0] if timestamps and timestamps[0] else None
         n_channels = getattr(self, 'n_channels', self.patterns[0].n_channels if self.patterns else 0)
-        return {
+        info = {
             'format': self.file_extension,
             'songname': self.songname,
             'artist': self.artist,
@@ -312,6 +367,54 @@ class Song(ABC):
             'bpm': first_row[2] if first_row else None,
             'duration_seconds': self.get_song_duration() if timestamps else 0.0,
         }
+        if hasattr(self, 'restart_position'):
+            info['restart_position'] = getattr(self, 'restart_position')
+        return info
+
+    def _ascii_pattern_entries(self, sequence_only: bool) -> list[tuple[int | None, int]]:
+        """Build pattern references for ASCII rendering."""
+        if sequence_only:
+            return [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
+        return [(None, pat_idx) for pat_idx in range(len(self.patterns))]
+
+    def to_ascii(self, *, sequence_only: bool = True, include_headers: bool = False) -> str:
+        """Return a deterministic tracker-style ASCII dump of pattern note cells.
+
+        :param sequence_only: True to dump pattern order entries, False for full pattern pool.
+        :param include_headers: True to include per-pattern metadata headers.
+        :return: The ASCII dump as a Python string.
+        """
+        lines: list[str] = []
+        entries = self._ascii_pattern_entries(sequence_only)
+
+        for sequence_idx, pattern_idx in entries:
+            pat = self.patterns[pattern_idx]
+            if include_headers:
+                if sequence_idx is None:
+                    lines.append(
+                        f"# Pattern pool {pattern_idx}: {pat.n_rows} rows, {pat.n_channels} channels"
+                    )
+                else:
+                    lines.append(
+                        f"# Pattern {sequence_idx} (unique pattern {pattern_idx}): "
+                        f"{pat.n_rows} rows, {pat.n_channels} channels"
+                    )
+            for row in range(pat.n_rows):
+                row_text = ""
+                for channel in range(pat.n_channels):
+                    row_text += f"| {pat.data[channel][row]} "
+                lines.append(f"{row_text}|")
+            lines.append("")
+        return "\n".join(lines)
+
+    def save_ascii(self, fname: str, verbose: bool = True):
+        """Write ``to_ascii()`` output to a file using ASCII encoding."""
+        if verbose:
+            print(f'Saving to {fname}... ', end='', flush=True)
+        with open(fname, 'w', encoding='ascii') as file:
+            file.write(self.to_ascii())
+        if verbose:
+            print('done.')
     
     '''
     -------------------------------------
@@ -502,6 +605,26 @@ class Song(ABC):
     -------------------------------------
     '''
 
+    def get_note_rc(self, sequence_idx: int, row: int, channel: int):
+        """Return a note using canonical coordinate order (sequence, row, channel)."""
+        return self.get_note(sequence_idx, row, channel)
+
+    def set_note_rc(
+        self,
+        sequence_idx: int,
+        row: int,
+        channel: int,
+        sample_idx: int,
+        period: str,
+        effect: str = "",
+    ):
+        """Write a note using canonical coordinate order (sequence, row, channel)."""
+        self.set_note(sequence_idx, channel, row, sample_idx, period, effect)
+
+    def clear_note_rc(self, sequence_idx: int, row: int, channel: int):
+        """Clear one note using canonical coordinate order (sequence, row, channel)."""
+        self.clear_note(sequence_idx, channel, row)
+
     def set_note(self, sequence_idx:int, channel: int, row: int, sample_idx: int, period: str, effect: str = ""):
         """
         Writes a note in the given pattern, channel and row with the given sample.
@@ -634,6 +757,10 @@ class Song(ABC):
     EFFECTS
     -------------------------------------
     '''
+
+    def set_effect_rc(self, sequence_idx: int, row: int, channel: int, effect: str = ""):
+        """Write an effect using canonical coordinate order (sequence, row, channel)."""
+        self.set_effect(sequence_idx, channel, row, effect)
 
     def set_effect(self, sequence_idx: int, channel: int, row: int, effect: str = ""):
         """

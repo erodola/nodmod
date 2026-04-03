@@ -61,6 +61,7 @@ class MODSong(Song):
         # We always store the maximum allowed slots, possibly with empty slots.
         self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
         self.n_actual_samples = 0  # The number of non-empty samples present in the song.
+        self._restart_position_raw = 127
 
     def _update_n_actual_samples(self) -> None:
         """Refresh the cached count of non-empty sample slots."""
@@ -93,8 +94,37 @@ class MODSong(Song):
         new_song.pattern_seq = copy.deepcopy(self.pattern_seq)
         new_song.samples = copy.deepcopy(self.samples)
         new_song.n_actual_samples = self.n_actual_samples
+        new_song._restart_position_raw = self._restart_position_raw
 
         return new_song
+
+    @property
+    def restart_position(self) -> int | None:
+        """Return normalized MOD restart position (127 maps to None)."""
+        return self.get_restart_position(raw=False)
+
+    def get_restart_position(self, raw: bool = False) -> int | None:
+        """Return MOD restart position as raw header byte or normalized value."""
+        value = self._restart_position_raw
+        if raw:
+            return value
+        if value == 127:
+            return None
+        return value
+
+    def set_restart_position(self, position: int | None, *, raw: bool = False) -> None:
+        """Set MOD restart position as normalized value or raw header byte."""
+        if position is None:
+            self._restart_position_raw = 127
+            return
+        if not isinstance(position, int):
+            raise TypeError(f"Invalid restart position type {type(position).__name__} (expected int or None).")
+        if position < 0 or position > 255:
+            raise ValueError(f"Invalid restart position {position} (expected 0-255).")
+        if raw:
+            self._restart_position_raw = position
+            return
+        self._restart_position_raw = position
 
     '''
     -------------------------------------
@@ -138,6 +168,7 @@ class MODSong(Song):
             # ----------------------------
 
             song_length = data[950]  # song length in patterns
+            self._restart_position_raw = data[951]
             self.pattern_seq = [0] * song_length
 
             n_unique_patterns = 0
@@ -263,19 +294,10 @@ class MODSong(Song):
         :param verbose: False for silent saving.
         :return: None.
         """
-
         if verbose:
             print(f'Saving to {fname}... ', end='', flush=True)
-
         with open(fname, 'w', encoding='ascii') as file:
-
-            for p in [self.patterns[i] for i in self.pattern_seq]:
-                for r in range(MODSong.ROWS):
-                    for c in range(MODSong.CHANNELS):
-                        file.write(f"| {p.data[c][r]} ")
-                    file.write('|\n')
-                file.write('\n')
-
+            file.write(self.to_ascii())
         if verbose:
             print('done.')
 
@@ -353,7 +375,7 @@ class MODSong(Song):
         # ----------------------------
 
         data += len(self.pattern_seq).to_bytes(1)
-        data += int(127).to_bytes(1)
+        data += int(self._restart_position_raw).to_bytes(1)
         data += bytearray(self.pattern_seq) + bytearray(128 - len(self.pattern_seq))
         data += bytes("M.K.", 'utf-8')
 
@@ -744,6 +766,57 @@ class MODSong(Song):
         smp = self.get_sample(sample_idx)
         smp.repeat_point = max(0, start)
         smp.repeat_len = max(0, length)
+
+    def get_sample_pcm_i8(self, sample_idx: int) -> bytes:
+        """Return raw signed 8-bit PCM bytes for one MOD sample slot."""
+        smp = self.get_sample(sample_idx)
+        return smp.waveform.tobytes()
+
+    def set_sample_pcm_i8(
+        self,
+        sample_idx: int,
+        pcm_i8: bytes | bytearray | memoryview | array.array,
+        *,
+        reset_meta: bool = False,
+    ) -> None:
+        """Set one MOD sample waveform from raw signed 8-bit PCM bytes."""
+        smp = self.get_sample(sample_idx)
+
+        raw: bytes
+        if isinstance(pcm_i8, array.array):
+            if pcm_i8.typecode not in {'b', 'B'}:
+                raise TypeError(f"Invalid PCM array typecode {pcm_i8.typecode!r} (expected 'b' or 'B').")
+            raw = pcm_i8.tobytes()
+        elif isinstance(pcm_i8, (bytes, bytearray, memoryview)):
+            raw = bytes(pcm_i8)
+        else:
+            raise TypeError(
+                f"Invalid pcm_i8 type {type(pcm_i8).__name__} "
+                "(expected bytes, bytearray, memoryview, or array.array)."
+            )
+
+        smp.waveform = array.array('b')
+        smp.waveform.frombytes(raw)
+
+        if reset_meta:
+            smp.name = ""
+            smp.finetune = 0
+            smp.volume = 64
+            smp.repeat_point = 0
+            smp.repeat_len = 0
+            smp.tune = ''
+
+        self._update_n_actual_samples()
+
+    def set_sample_loop_bytes(self, sample_idx: int, start_byte: int, length_byte: int) -> None:
+        """Set MOD sample loop points using explicit byte units."""
+        if start_byte < 0:
+            raise ValueError(f"Invalid loop start {start_byte} (expected >= 0).")
+        if length_byte < 0:
+            raise ValueError(f"Invalid loop length {length_byte} (expected >= 0).")
+        smp = self.get_sample(sample_idx)
+        smp.repeat_point = start_byte
+        smp.repeat_len = length_byte
 
 
     def validate_sample_loop(self, sample_idx: int) -> None:

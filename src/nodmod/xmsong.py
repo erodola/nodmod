@@ -14,6 +14,7 @@ from nodmod import Instrument
 from nodmod import EnvelopePoint
 from nodmod import Pattern
 from nodmod import XMNote
+from .views import SampleView
 
 
 class XMSong(Song):
@@ -180,20 +181,7 @@ class XMSong(Song):
             print(f'Saving to {fname}... ', end='', flush=True)
 
         with open(fname, 'w', encoding='ascii') as file:
-            for seq_idx, pat_idx in enumerate(self.pattern_seq):
-                pat = self.patterns[pat_idx]
-                n_rows = len(pat.data[0]) if pat.data else 0
-                n_channels = len(pat.data)
-                
-                # Write pattern header
-                file.write(f"# Pattern {seq_idx} (unique pattern {pat_idx}): "
-                           f"{n_rows} rows, {n_channels} channels\n")
-                
-                for r in range(n_rows):
-                    for c in range(n_channels):
-                        file.write(f"| {pat.data[c][r]} ")
-                    file.write('|\n')
-                file.write('\n')
+            file.write(self.to_ascii(sequence_only=True, include_headers=True))
 
         if verbose:
             print('done.')
@@ -1475,6 +1463,20 @@ class XMSong(Song):
 
         pat.data[channel][row] = new_note
 
+    def set_note_rc(
+        self,
+        sequence_idx: int,
+        row: int,
+        channel: int,
+        instrument_idx: int,
+        period: str,
+        effect: str = "",
+        vol_cmd: str | None = None,
+        vol_val: int | None = None,
+    ):
+        """Write an XM note using canonical coordinate order (sequence, row, channel)."""
+        self.set_note(sequence_idx, channel, row, instrument_idx, period, effect, vol_cmd, vol_val)
+
     def add_channel(self, count: int = 1) -> None:
         """Append one or more channels to every XM pattern.
 
@@ -1560,6 +1562,26 @@ class XMSong(Song):
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
 
         return pat.data[channel][row]
+
+    def iter_samples(self, *, include_empty: bool = True):
+        """Yield immutable snapshots for XM samples flattened across instruments."""
+        sample_idx = 1
+        for inst in self.instruments:
+            for sample in inst.samples:
+                length = len(sample.waveform)
+                if not include_empty and length == 0:
+                    sample_idx += 1
+                    continue
+                yield SampleView(
+                    sample_idx=sample_idx,
+                    name=sample.name,
+                    length=length,
+                    finetune=sample.finetune,
+                    volume=sample.volume,
+                    loop_start=sample.repeat_point,
+                    loop_length=sample.repeat_len,
+                )
+                sample_idx += 1
 
     '''
     -------------------------------------
