@@ -172,6 +172,8 @@ assert encode_mod_effect("F", 125) == "F7D"
 # Immutable snapshots for read-only analysis
 summary = song.view()
 cells = list(song.iter_cells(sequence_only=True))
+rows = list(song.iter_rows(sequence_only=True))
+effects = list(song.iter_effects(sequence_only=True, include_empty=False))
 samples = list(song.iter_samples(include_empty=False))
 ```
 
@@ -193,6 +195,33 @@ print(probe.detected_format, probe.supported, probe.metadata)
 # In-memory ASCII dump (no temp files needed)
 text = song.to_ascii(sequence_only=True, include_headers=False)
 ```
+
+```python
+# Playback-aware row timeline with source coordinates
+playback = list(song.iter_playback_rows(max_steps=250_000))
+first = playback[0]
+print(first.sequence_idx, first.pattern_idx, first.row, first.start_sec, first.end_sec)
+```
+
+```python
+# Reachability-aware used-resource scans
+mod_used = song.get_used_samples(scope="reachable", order="first_use")
+xm_insts = xm_song.get_used_instruments(scope="sequence", order="sorted")
+xm_samples = xm_song.get_used_samples(scope="reachable", order="sorted")
+s3m_used = s3m_song.get_used_samples(scope="reachable", order="sorted")
+```
+
+```python
+# One-call loading with format dispatch
+from nodmod import load_song
+
+song = load_song("music/demo.mod")
+```
+
+Scope semantics:
+
+- `scope="sequence"` inspects every row in sequence-referenced patterns.
+- `scope="reachable"` inspects rows actually visited during playback flow.
 
 ## Requirements
 
