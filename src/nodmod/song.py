@@ -77,7 +77,11 @@ class Song(ABC):
     def _iter_pattern_entries(self, sequence_only: bool) -> list[tuple[int, int]]:
         """Build deterministic traversal entries as (sequence_idx, pattern_idx)."""
         if sequence_only:
-            return [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
+            entries: list[tuple[int, int]] = []
+            for seq_idx, pat_idx in enumerate(self.pattern_seq):
+                if 0 <= pat_idx < len(self.patterns):
+                    entries.append((seq_idx, pat_idx))
+            return entries
         return [(-1, pat_idx) for pat_idx in range(len(self.patterns))]
 
     @staticmethod
