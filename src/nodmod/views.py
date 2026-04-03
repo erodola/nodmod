@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ['CellView', 'SampleView', 'SongView']
+__all__ = ['CellView', 'RowView', 'SampleView', 'SongView']
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,16 @@ class CellView:
     vol_cmd: str | None = None
     vol_val: int | None = None
     volume: int | None = None
+
+
+@dataclass(frozen=True)
+class RowView:
+    """Read-only snapshot of one pattern row in sequence context."""
+
+    sequence_idx: int
+    pattern_idx: int
+    row: int
+    cells: tuple[CellView, ...]
 
 
 @dataclass(frozen=True)

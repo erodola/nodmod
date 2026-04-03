@@ -12,7 +12,7 @@ import subprocess
 from abc import ABC, abstractmethod
 
 from .types import Note
-from .views import CellView, SampleView, SongView
+from .views import CellView, RowView, SampleView, SongView
 
 __all__ = ['Song']
 
@@ -73,38 +73,106 @@ class Song(ABC):
             n_channels=n_channels,
         )
 
+    def _iter_pattern_entries(self, sequence_only: bool) -> list[tuple[int, int]]:
+        """Build deterministic traversal entries as (sequence_idx, pattern_idx)."""
+        if sequence_only:
+            return [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
+        return [(-1, pat_idx) for pat_idx in range(len(self.patterns))]
+
+    @staticmethod
+    def _make_cell_view(
+        *,
+        sequence_idx: int,
+        pattern_idx: int,
+        row: int,
+        channel: int,
+        note,
+    ) -> CellView:
+        """Build one immutable cell snapshot from a concrete note object."""
+        vol_cmd = getattr(note, 'vol_cmd', None)
+        if vol_cmd == '':
+            vol_cmd = None
+        vol_val = getattr(note, 'vol_val', None)
+        if not isinstance(vol_val, int) or vol_val < 0:
+            vol_val = None
+        volume = getattr(note, 'volume', None)
+        if not isinstance(volume, int) or volume < 0:
+            volume = None
+        return CellView(
+            sequence_idx=sequence_idx,
+            pattern_idx=pattern_idx,
+            row=row,
+            channel=channel,
+            instrument_idx=getattr(note, 'instrument_idx', 0),
+            period=getattr(note, 'period', ''),
+            effect=getattr(note, 'effect', ''),
+            vol_cmd=vol_cmd,
+            vol_val=vol_val,
+            volume=volume,
+        )
+
     def iter_cells(self, *, sequence_only: bool = True):
         """Yield immutable cell snapshots in deterministic sequence,row,channel order."""
-        if sequence_only:
-            entries = [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
-        else:
-            entries = [(-1, pat_idx) for pat_idx in range(len(self.patterns))]
-        for sequence_idx, pattern_idx in entries:
+        for sequence_idx, pattern_idx in self._iter_pattern_entries(sequence_only):
             pat = self.patterns[pattern_idx]
             for row in range(pat.n_rows):
                 for channel in range(pat.n_channels):
                     note = pat.data[channel][row]
-                    vol_cmd = getattr(note, 'vol_cmd', None)
-                    if vol_cmd == '':
-                        vol_cmd = None
-                    vol_val = getattr(note, 'vol_val', None)
-                    if not isinstance(vol_val, int) or vol_val < 0:
-                        vol_val = None
-                    volume = getattr(note, 'volume', None)
-                    if not isinstance(volume, int) or volume < 0:
-                        volume = None
-                    yield CellView(
+                    yield self._make_cell_view(
                         sequence_idx=sequence_idx,
                         pattern_idx=pattern_idx,
                         row=row,
                         channel=channel,
-                        instrument_idx=getattr(note, 'instrument_idx', 0),
-                        period=getattr(note, 'period', ''),
-                        effect=getattr(note, 'effect', ''),
-                        vol_cmd=vol_cmd,
-                        vol_val=vol_val,
-                        volume=volume,
+                        note=note,
                     )
+
+    def iter_rows(self, *, sequence_only: bool = True, reachable_only: bool = False):
+        """Yield immutable row snapshots in deterministic sequence,row order."""
+        if reachable_only:
+            try:
+                for played_row in self.iter_playback_rows():
+                    pat = self.patterns[played_row.pattern_idx]
+                    cells = tuple(
+                        self._make_cell_view(
+                            sequence_idx=played_row.sequence_idx,
+                            pattern_idx=played_row.pattern_idx,
+                            row=played_row.row,
+                            channel=channel,
+                            note=pat.data[channel][played_row.row],
+                        )
+                        for channel in range(pat.n_channels)
+                    )
+                    yield RowView(
+                        sequence_idx=played_row.sequence_idx,
+                        pattern_idx=played_row.pattern_idx,
+                        row=played_row.row,
+                        cells=cells,
+                    )
+            except NotImplementedError as exc:
+                raise NotImplementedError(
+                    "iter_rows(reachable_only=True) requires iter_playback_rows() support for this song format."
+                ) from exc
+            return
+
+        for sequence_idx, pattern_idx in self._iter_pattern_entries(sequence_only):
+            pat = self.patterns[pattern_idx]
+            for row in range(pat.n_rows):
+                cells = tuple(
+                    self._make_cell_view(
+                        sequence_idx=sequence_idx,
+                        pattern_idx=pattern_idx,
+                        row=row,
+                        channel=channel,
+                        note=pat.data[channel][row],
+                    )
+                    for channel in range(pat.n_channels)
+                )
+                yield RowView(
+                    sequence_idx=sequence_idx,
+                    pattern_idx=pattern_idx,
+                    row=row,
+                    cells=cells,
+                )
 
     def iter_samples(self, *, include_empty: bool = True):
         """Yield immutable sample-slot snapshots for song formats with direct sample banks."""
@@ -343,6 +411,16 @@ class Song(ABC):
                  Within each list, each row is a triple (timestamp [s], speed, bpm).
         """
         pass
+
+    def iter_playback_rows(
+        self,
+        *,
+        profile: str | None = None,  # noqa: ARG002
+        exact: bool = True,  # noqa: ARG002
+        max_steps: int = 250_000,  # noqa: ARG002
+    ):
+        """Yield playback-order rows with timing metadata when supported by a concrete format."""
+        raise NotImplementedError("iter_playback_rows() is not implemented for this song format.")
 
     def get_song_duration(self) -> float:
         """
