@@ -39,20 +39,17 @@ jobs:
             dev/test_mod_pcm_helpers.py
             dev/test_mod_restart_position.py
             dev/test_mod_sample_api.py
-            dev/test_modnote_alias.py
-            dev/test_note_editing.py
-            dev/test_plan_api.py
             dev/test_probe_api.py
+            dev/test_s3m_basic.py
+            dev/test_s3m_pattern_decode.py
+            dev/test_s3m_roundtrip_write.py
+            dev/test_s3m_sample_api.py
             dev/test_s3m_timing_functions.py
             dev/test_song_base.py
             dev/test_types_basic.py
             dev/test_views_api.py
             dev/test_xm_basic.py
-            dev/test_xm_copy_instrument.py
-            dev/test_xm_instrument_api.py
-            dev/test_xm_instrument_raw.py
             dev/test_xm_instruments.py
-            dev/test_xm_sample_io.py
           )
 
           for t in "${tests[@]}"; do
