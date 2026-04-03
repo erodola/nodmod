@@ -77,8 +77,21 @@ def test_row_views_reachable_only_guard() -> None:
     )
 
 
+def test_row_views_reachable_only_follows_playback() -> None:
+    song = MODSong()
+    song.add_pattern()
+    song.set_sequence([0, 1])
+    song.set_effect(0, 0, 1, "D03")
+
+    rows = list(song.iter_rows(reachable_only=True))
+    assert_true(len(rows) == 63, "reachable row traversal should follow playback truncation/jumps")
+    assert_true(rows[0].sequence_idx == 0 and rows[0].row == 0, "reachable traversal first row mismatch")
+    assert_true(rows[2].sequence_idx == 1 and rows[2].row == 3, "reachable traversal jump target mismatch")
+
+
 if __name__ == "__main__":
     test_row_views_order_and_snapshot()
     test_row_views_sequence_only_behavior()
     test_row_views_reachable_only_guard()
+    test_row_views_reachable_only_follows_playback()
     print("OK: test_row_views_api.py")

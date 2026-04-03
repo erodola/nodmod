@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-__all__ = ['CellView', 'RowView', 'EffectView', 'SampleView', 'SongView']
+__all__ = [
+    'CellView',
+    'RowView',
+    'PlaybackRowView',
+    'EffectView',
+    'SampleView',
+    'SongView',
+]
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,20 @@ class RowView:
     pattern_idx: int
     row: int
     cells: tuple[CellView, ...]
+
+
+@dataclass(frozen=True)
+class PlaybackRowView:
+    """Read-only snapshot of one playback-visited row with timing metadata."""
+
+    visit_idx: int
+    sequence_idx: int
+    pattern_idx: int
+    row: int
+    start_sec: float
+    end_sec: float
+    speed: int
+    tempo: int
 
 
 @dataclass(frozen=True)

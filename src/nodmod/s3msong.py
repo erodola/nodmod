@@ -12,6 +12,7 @@ from nodmod import Pattern
 from nodmod import S3MNote
 from nodmod import S3MSample
 from nodmod import Song
+from .views import PlaybackRowView
 
 
 class S3MSong(Song):
@@ -381,6 +382,107 @@ class S3MSong(Song):
 
         if verbose:
             print('done.')
+
+    def iter_playback_rows(
+        self,
+        *,
+        profile: str | None = None,  # noqa: ARG002
+        exact: bool = True,  # noqa: ARG002
+        max_steps: int = 250_000,
+    ):
+        """Yield visited S3M rows with source coordinates and timing metadata."""
+        if max_steps <= 0:
+            raise ValueError(f"Invalid max_steps {max_steps} (expected > 0).")
+
+        speed = self.initial_speed
+        bpm = self.initial_tempo
+        elapsed = 0.0
+        seq_idx = 0
+        start_row = 0
+        self_jump_count = 0
+        self_jump_limit = 5
+        visit_idx = 0
+
+        while seq_idx < len(self.pattern_seq):
+            pat_idx = self.pattern_seq[seq_idx]
+            if pat_idx < 0 or pat_idx >= len(self.patterns):
+                seq_idx += 1
+                start_row = 0
+                continue
+
+            pat = self.patterns[pat_idx]
+            r = start_row
+            start_row = 0
+
+            while r < pat.n_rows:
+                if visit_idx >= max_steps:
+                    raise RuntimeError(
+                        f"iter_playback_rows exceeded max_steps={max_steps}; possible runaway playback loop."
+                    )
+
+                pending_jump_seq = None
+                pending_break_row = None
+                row_delay = 0
+
+                for channel in range(pat.n_channels):
+                    effect = self._effect_text(pat.data[channel][r].effect)
+                    if effect == '':
+                        continue
+                    if effect.startswith('A') and len(effect) == 3:
+                        value = int(effect[1:], 16)
+                        if value != 0:
+                            speed = value
+                    elif effect.startswith('T') and len(effect) == 3:
+                        value = int(effect[1:], 16)
+                        if value >= 33:
+                            bpm = value
+                    elif effect.startswith('B') and len(effect) == 3:
+                        value = int(effect[1:], 16)
+                        if value < len(self.pattern_seq):
+                            pending_jump_seq = value
+                    elif effect.startswith('C') and len(effect) == 3:
+                        hi = int(effect[1], 16)
+                        lo = int(effect[2], 16)
+                        row_target = hi * 10 + lo
+                        if row_target < pat.n_rows:
+                            pending_break_row = row_target
+                    elif effect.startswith('SE') and len(effect) == 3:
+                        row_delay = max(row_delay, int(effect[2], 16))
+
+                start_sec = elapsed
+                row_duration = (1 + row_delay) * self.get_tick_duration(bpm) * speed
+                elapsed += row_duration
+                yield PlaybackRowView(
+                    visit_idx=visit_idx,
+                    sequence_idx=seq_idx,
+                    pattern_idx=pat_idx,
+                    row=r,
+                    start_sec=start_sec,
+                    end_sec=elapsed,
+                    speed=speed,
+                    tempo=bpm,
+                )
+                visit_idx += 1
+
+                if pending_jump_seq is not None or pending_break_row is not None:
+                    if pending_jump_seq is not None:
+                        if pending_jump_seq == seq_idx:
+                            self_jump_count += 1
+                            if self_jump_count > self_jump_limit:
+                                return
+                        else:
+                            self_jump_count = 0
+                    if pending_break_row is not None:
+                        start_row = pending_break_row
+                        seq_idx = pending_jump_seq if pending_jump_seq is not None else seq_idx + 1
+                    else:
+                        start_row = 0
+                        seq_idx = pending_jump_seq
+                    break
+
+                r += 1
+            else:
+                seq_idx += 1
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """Compute per-row playback timestamps using S3M tempo and flow-control effects."""
