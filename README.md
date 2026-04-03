@@ -1,5 +1,6 @@
 # NodMOD
 
+[![CI](https://github.com/erodola/nodmod/actions/workflows/ci.yml/badge.svg)](https://github.com/erodola/nodmod/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases)
 [![API Stability](https://img.shields.io/badge/API-stable-brightgreen)](https://github.com/erodola/nodmod/releases/tag/v1.0.0)
 [![Python](https://img.shields.io/badge/python-3.11-blue)](https://github.com/erodola/nodmod/blob/main/pyproject.toml)
