@@ -61,6 +61,7 @@ class MODSong(Song):
         # We always store the maximum allowed slots, possibly with empty slots.
         self.samples = [Sample() for _ in range(MODSong.SAMPLES)]
         self.n_actual_samples = 0  # The number of non-empty samples present in the song.
+        self._restart_position_raw = 127
 
     def _update_n_actual_samples(self) -> None:
         """Refresh the cached count of non-empty sample slots."""
@@ -93,8 +94,37 @@ class MODSong(Song):
         new_song.pattern_seq = copy.deepcopy(self.pattern_seq)
         new_song.samples = copy.deepcopy(self.samples)
         new_song.n_actual_samples = self.n_actual_samples
+        new_song._restart_position_raw = self._restart_position_raw
 
         return new_song
+
+    @property
+    def restart_position(self) -> int | None:
+        """Return normalized MOD restart position (127 maps to None)."""
+        return self.get_restart_position(raw=False)
+
+    def get_restart_position(self, raw: bool = False) -> int | None:
+        """Return MOD restart position as raw header byte or normalized value."""
+        value = self._restart_position_raw
+        if raw:
+            return value
+        if value == 127:
+            return None
+        return value
+
+    def set_restart_position(self, position: int | None, *, raw: bool = False) -> None:
+        """Set MOD restart position as normalized value or raw header byte."""
+        if position is None:
+            self._restart_position_raw = 127
+            return
+        if not isinstance(position, int):
+            raise TypeError(f"Invalid restart position type {type(position).__name__} (expected int or None).")
+        if position < 0 or position > 255:
+            raise ValueError(f"Invalid restart position {position} (expected 0-255).")
+        if raw:
+            self._restart_position_raw = position
+            return
+        self._restart_position_raw = position
 
     '''
     -------------------------------------
@@ -138,6 +168,7 @@ class MODSong(Song):
             # ----------------------------
 
             song_length = data[950]  # song length in patterns
+            self._restart_position_raw = data[951]
             self.pattern_seq = [0] * song_length
 
             n_unique_patterns = 0
@@ -353,7 +384,7 @@ class MODSong(Song):
         # ----------------------------
 
         data += len(self.pattern_seq).to_bytes(1)
-        data += int(127).to_bytes(1)
+        data += int(self._restart_position_raw).to_bytes(1)
         data += bytearray(self.pattern_seq) + bytearray(128 - len(self.pattern_seq))
         data += bytes("M.K.", 'utf-8')
 

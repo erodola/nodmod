@@ -300,7 +300,7 @@ class Song(ABC):
             timestamps = []
         first_row = timestamps[0][0] if timestamps and timestamps[0] else None
         n_channels = getattr(self, 'n_channels', self.patterns[0].n_channels if self.patterns else 0)
-        return {
+        info = {
             'format': self.file_extension,
             'songname': self.songname,
             'artist': self.artist,
@@ -312,6 +312,9 @@ class Song(ABC):
             'bpm': first_row[2] if first_row else None,
             'duration_seconds': self.get_song_duration() if timestamps else 0.0,
         }
+        if hasattr(self, 'restart_position'):
+            info['restart_position'] = getattr(self, 'restart_position')
+        return info
     
     '''
     -------------------------------------
