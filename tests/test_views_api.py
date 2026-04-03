@@ -78,10 +78,43 @@ def test_s3m_sample_views() -> None:
     assert_true(len(rows) == 1 and rows[0].sample_idx == 1 and rows[0].name == "Bass", "S3M SampleView mismatch")
 
 
+def test_xm_cell_views_volume_column_propagation() -> None:
+    song = XMSong()
+    song.n_channels = 1
+    song.set_note(0, 0, 0, 1, "C-4", "A01", vol_cmd="v", vol_val=40)
+    song.set_note(0, 0, 1, 1, "D-4", "")
+
+    cells = list(song.iter_cells(sequence_only=True))
+    first = [c for c in cells if c.sequence_idx == 0 and c.row == 0 and c.channel == 0][0]
+    second = [c for c in cells if c.sequence_idx == 0 and c.row == 1 and c.channel == 0][0]
+
+    assert_true(first.vol_cmd == "v", "XM CellView should propagate vol_cmd")
+    assert_true(first.vol_val == 40, "XM CellView should propagate vol_val")
+    assert_true(first.volume is None, "XM CellView volume field should stay None")
+    assert_true(second.vol_cmd is None and second.vol_val is None, "XM empty volume column should map to None fields")
+
+
+def test_s3m_cell_views_volume_column_propagation() -> None:
+    song = S3MSong()
+    song.n_channels = 1
+    song.set_note(0, 0, 0, 1, "E-4", "A03", volume=33)
+    song.set_note(0, 0, 1, 1, "F-4", "", volume=None)
+
+    cells = list(song.iter_cells(sequence_only=True))
+    first = [c for c in cells if c.sequence_idx == 0 and c.row == 0 and c.channel == 0][0]
+    second = [c for c in cells if c.sequence_idx == 0 and c.row == 1 and c.channel == 0][0]
+
+    assert_true(first.volume == 33, "S3M CellView should propagate volume column")
+    assert_true(first.vol_cmd is None and first.vol_val is None, "S3M CellView XM volume fields should stay None")
+    assert_true(second.volume is None, "S3M empty volume column should map to None")
+
+
 if __name__ == "__main__":
     test_cell_views_order_and_snapshot()
     test_song_view_snapshot()
     test_mod_sample_views()
     test_xm_sample_views()
     test_s3m_sample_views()
+    test_xm_cell_views_volume_column_propagation()
+    test_s3m_cell_views_volume_column_propagation()
     print("OK: test_views_api.py")

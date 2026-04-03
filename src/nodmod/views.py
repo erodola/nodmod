@@ -18,6 +18,9 @@ class CellView:
     instrument_idx: int
     period: str
     effect: str
+    vol_cmd: str | None = None
+    vol_val: int | None = None
+    volume: int | None = None
 
 
 @dataclass(frozen=True)

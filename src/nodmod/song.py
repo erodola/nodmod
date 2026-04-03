@@ -84,6 +84,15 @@ class Song(ABC):
             for row in range(pat.n_rows):
                 for channel in range(pat.n_channels):
                     note = pat.data[channel][row]
+                    vol_cmd = getattr(note, 'vol_cmd', None)
+                    if vol_cmd == '':
+                        vol_cmd = None
+                    vol_val = getattr(note, 'vol_val', None)
+                    if not isinstance(vol_val, int) or vol_val < 0:
+                        vol_val = None
+                    volume = getattr(note, 'volume', None)
+                    if not isinstance(volume, int) or volume < 0:
+                        volume = None
                     yield CellView(
                         sequence_idx=sequence_idx,
                         pattern_idx=pattern_idx,
@@ -92,6 +101,9 @@ class Song(ABC):
                         instrument_idx=getattr(note, 'instrument_idx', 0),
                         period=getattr(note, 'period', ''),
                         effect=getattr(note, 'effect', ''),
+                        vol_cmd=vol_cmd,
+                        vol_val=vol_val,
+                        volume=volume,
                     )
 
     def iter_samples(self, *, include_empty: bool = True):
