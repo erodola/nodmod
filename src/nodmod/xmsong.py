@@ -14,6 +14,7 @@ from nodmod import Instrument
 from nodmod import EnvelopePoint
 from nodmod import Pattern
 from nodmod import XMNote
+from .views import SampleView
 
 
 class XMSong(Song):
@@ -1561,6 +1562,26 @@ class XMSong(Song):
             raise IndexError(f"Invalid channel index {channel} (expected 0-{self.n_channels-1}).")
 
         return pat.data[channel][row]
+
+    def iter_samples(self, *, include_empty: bool = True):
+        """Yield immutable snapshots for XM samples flattened across instruments."""
+        sample_idx = 1
+        for inst in self.instruments:
+            for sample in inst.samples:
+                length = len(sample.waveform)
+                if not include_empty and length == 0:
+                    sample_idx += 1
+                    continue
+                yield SampleView(
+                    sample_idx=sample_idx,
+                    name=sample.name,
+                    length=length,
+                    finetune=sample.finetune,
+                    volume=sample.volume,
+                    loop_start=sample.repeat_point,
+                    loop_length=sample.repeat_len,
+                )
+                sample_idx += 1
 
     '''
     -------------------------------------

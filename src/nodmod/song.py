@@ -12,6 +12,7 @@ import subprocess
 from abc import ABC, abstractmethod
 
 from .types import Note
+from .views import CellView, SampleView, SongView
 
 __all__ = ['Song']
 
@@ -59,6 +60,60 @@ class Song(ABC):
     def set_songname(self, song_name: str):
         """Set the song title metadata string."""
         self.songname = song_name
+
+    def view(self) -> SongView:
+        """Return an immutable song-level snapshot."""
+        n_channels = getattr(self, 'n_channels', self.patterns[0].n_channels if self.patterns else 0)
+        return SongView(
+            format=self.file_extension,
+            songname=self.songname,
+            artist=self.artist,
+            sequence=tuple(self.pattern_seq),
+            n_patterns=len(self.patterns),
+            n_channels=n_channels,
+        )
+
+    def iter_cells(self, *, sequence_only: bool = True):
+        """Yield immutable cell snapshots in deterministic sequence,row,channel order."""
+        if sequence_only:
+            entries = [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
+        else:
+            entries = [(-1, pat_idx) for pat_idx in range(len(self.patterns))]
+        for sequence_idx, pattern_idx in entries:
+            pat = self.patterns[pattern_idx]
+            for row in range(pat.n_rows):
+                for channel in range(pat.n_channels):
+                    note = pat.data[channel][row]
+                    yield CellView(
+                        sequence_idx=sequence_idx,
+                        pattern_idx=pattern_idx,
+                        row=row,
+                        channel=channel,
+                        instrument_idx=getattr(note, 'instrument_idx', 0),
+                        period=getattr(note, 'period', ''),
+                        effect=getattr(note, 'effect', ''),
+                    )
+
+    def iter_samples(self, *, include_empty: bool = True):
+        """Yield immutable sample-slot snapshots for song formats with direct sample banks."""
+        if not hasattr(self, 'samples'):
+            return
+        sample_slots = getattr(self, 'samples')
+        if not isinstance(sample_slots, list):
+            return
+        for sample_idx, sample in enumerate(sample_slots, start=1):
+            length = len(getattr(sample, 'waveform', []))
+            if not include_empty and length == 0:
+                continue
+            yield SampleView(
+                sample_idx=sample_idx,
+                name=getattr(sample, 'name', ''),
+                length=length,
+                finetune=getattr(sample, 'finetune', 0),
+                volume=getattr(sample, 'volume', 0),
+                loop_start=getattr(sample, 'repeat_point', 0),
+                loop_length=getattr(sample, 'repeat_len', 0),
+            )
 
     @staticmethod
     def _effect_text(note_or_effect) -> str:
