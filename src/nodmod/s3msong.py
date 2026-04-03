@@ -574,6 +574,19 @@ class S3MSong(Song):
         )
         pat.data[channel][row] = new_note
 
+    def set_note_rc(
+        self,
+        sequence_idx: int,
+        row: int,
+        channel: int,
+        instrument_idx: int,
+        period: str,
+        effect: str = "",
+        volume: int | None = None,
+    ) -> None:
+        """Write an S3M note using canonical coordinate order (sequence, row, channel)."""
+        self.set_note(sequence_idx, channel, row, instrument_idx, period, effect, volume)
+
     def set_bpm(self, pattern: int, channel: int, row: int, bpm: int):
         """Write an S3M tempo command at the requested pattern location."""
         if bpm < 32 or bpm > 255:

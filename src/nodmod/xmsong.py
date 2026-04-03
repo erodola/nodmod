@@ -1462,6 +1462,20 @@ class XMSong(Song):
 
         pat.data[channel][row] = new_note
 
+    def set_note_rc(
+        self,
+        sequence_idx: int,
+        row: int,
+        channel: int,
+        instrument_idx: int,
+        period: str,
+        effect: str = "",
+        vol_cmd: str | None = None,
+        vol_val: int | None = None,
+    ):
+        """Write an XM note using canonical coordinate order (sequence, row, channel)."""
+        self.set_note(sequence_idx, channel, row, instrument_idx, period, effect, vol_cmd, vol_val)
+
     def add_channel(self, count: int = 1) -> None:
         """Append one or more channels to every XM pattern.
 

@@ -550,6 +550,26 @@ class Song(ABC):
     -------------------------------------
     '''
 
+    def get_note_rc(self, sequence_idx: int, row: int, channel: int):
+        """Return a note using canonical coordinate order (sequence, row, channel)."""
+        return self.get_note(sequence_idx, row, channel)
+
+    def set_note_rc(
+        self,
+        sequence_idx: int,
+        row: int,
+        channel: int,
+        sample_idx: int,
+        period: str,
+        effect: str = "",
+    ):
+        """Write a note using canonical coordinate order (sequence, row, channel)."""
+        self.set_note(sequence_idx, channel, row, sample_idx, period, effect)
+
+    def clear_note_rc(self, sequence_idx: int, row: int, channel: int):
+        """Clear one note using canonical coordinate order (sequence, row, channel)."""
+        self.clear_note(sequence_idx, channel, row)
+
     def set_note(self, sequence_idx:int, channel: int, row: int, sample_idx: int, period: str, effect: str = ""):
         """
         Writes a note in the given pattern, channel and row with the given sample.
@@ -682,6 +702,10 @@ class Song(ABC):
     EFFECTS
     -------------------------------------
     '''
+
+    def set_effect_rc(self, sequence_idx: int, row: int, channel: int, effect: str = ""):
+        """Write an effect using canonical coordinate order (sequence, row, channel)."""
+        self.set_effect(sequence_idx, channel, row, effect)
 
     def set_effect(self, sequence_idx: int, channel: int, row: int, effect: str = ""):
         """
