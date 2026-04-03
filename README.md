@@ -1,5 +1,12 @@
 # NodMOD
 
+[![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases)
+[![API Stability](https://img.shields.io/badge/API-stable-brightgreen)](https://github.com/erodola/nodmod/releases/tag/v1.0.0)
+[![Python](https://img.shields.io/badge/python-3.11-blue)](https://github.com/erodola/nodmod/blob/main/pyproject.toml)
+[![License](https://img.shields.io/github/license/erodola/nodmod)](https://github.com/erodola/nodmod/blob/main/LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/erodola/nodmod)](https://github.com/erodola/nodmod/commits/main)
+[![Formats](https://img.shields.io/badge/formats-MOD%20%7C%20XM%20%7C%20S3M-4c8bf5)](https://github.com/erodola/nodmod)
+
 NodMOD is a Python library for reading, editing, and writing tracker modules.
 
 It currently focuses on three classic formats:
