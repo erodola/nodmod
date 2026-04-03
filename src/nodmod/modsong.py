@@ -1163,20 +1163,22 @@ class MODSong(Song):
                 self.samples[s] = Sample()
         self._update_n_actual_samples()
 
-    def get_used_samples(self) -> list[int]:
-        """Return sorted sample indices referenced by notes in the song.
-
-        The result is sorted numerically by sample index, not by first-use order.
-
-        :return: Referenced 1-based sample indices.
-        """
-        used = set()
-        for pattern in self.patterns:
-            for channel in pattern.data:
-                for note in channel:
-                    if note.instrument_idx > 0:
-                        used.add(note.instrument_idx)
-        return sorted(used)
+    def get_used_samples(
+        self,
+        *,
+        scope: str = "sequence",
+        order: str = "sorted",
+    ) -> list[int]:
+        """Return sample indices referenced by notes under sequence or reachable scope."""
+        self._validate_used_resource_args(scope, order)
+        seen: set[int] = set()
+        first_use: list[int] = []
+        for note in self._iter_notes_by_scope(scope):
+            sample_idx = getattr(note, 'instrument_idx', 0)
+            if sample_idx > 0 and sample_idx not in seen:
+                seen.add(sample_idx)
+                first_use.append(sample_idx)
+        return self._finalize_used_values(first_use, order)
     
     '''
     -------------------------------------

@@ -240,6 +240,44 @@ class Song(ABC):
             )
 
     @staticmethod
+    def _validate_used_resource_args(scope: str, order: str) -> None:
+        """Validate shared scope/order options used by used-resource APIs."""
+        if scope not in {"sequence", "reachable"}:
+            raise ValueError(f"Invalid scope {scope!r} (expected 'sequence' or 'reachable').")
+        if order not in {"sorted", "first_use"}:
+            raise ValueError(f"Invalid order {order!r} (expected 'sorted' or 'first_use').")
+
+    @staticmethod
+    def _finalize_used_values(first_use_values: list[int], order: str) -> list[int]:
+        """Finalize a unique first-use list into caller-requested output ordering."""
+        if order == "first_use":
+            return first_use_values
+        return sorted(first_use_values)
+
+    def _iter_notes_by_scope(self, scope: str):
+        """Yield note objects under the requested row-visibility scope."""
+        if scope == "sequence":
+            for _, pattern_idx in self._iter_pattern_entries(sequence_only=True):
+                if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+                    continue
+                pat = self.patterns[pattern_idx]
+                for row in range(pat.n_rows):
+                    for channel in range(pat.n_channels):
+                        yield pat.data[channel][row]
+            return
+
+        for played_row in self.iter_playback_rows():
+            pattern_idx = played_row.pattern_idx
+            if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+                continue
+            pat = self.patterns[pattern_idx]
+            row = played_row.row
+            if row < 0 or row >= pat.n_rows:
+                continue
+            for channel in range(pat.n_channels):
+                yield pat.data[channel][row]
+
+    @staticmethod
     def _effect_text(note_or_effect) -> str:
         """Normalize a note or raw effect value into uppercase effect text."""
         if hasattr(note_or_effect, 'effect'):

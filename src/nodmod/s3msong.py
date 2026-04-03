@@ -589,6 +589,23 @@ class S3MSong(Song):
                 break
         return played_rows
 
+    def get_used_samples(
+        self,
+        *,
+        scope: str = "sequence",
+        order: str = "sorted",
+    ) -> list[int]:
+        """Return sample indices referenced by notes under sequence or reachable scope."""
+        self._validate_used_resource_args(scope, order)
+        seen: set[int] = set()
+        first_use: list[int] = []
+        for note in self._iter_notes_by_scope(scope):
+            sample_idx = getattr(note, 'instrument_idx', 0)
+            if sample_idx > 0 and sample_idx not in seen:
+                seen.add(sample_idx)
+                first_use.append(sample_idx)
+        return self._finalize_used_values(first_use, order)
+
     def add_pattern(self, n_rows: int = ROWS) -> int:
         """Append a new 64-row pattern and add it to the order list."""
         if n_rows != self.ROWS:

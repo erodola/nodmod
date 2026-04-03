@@ -207,7 +207,8 @@ class SongPlanTests(unittest.TestCase):
         dst.patterns.append(dst.patterns[0].__class__(64, 4))
         dst.patterns[2].data[1][1] = Note(11, "D-4", "")
         self.assertEqual(dst.get_used_patterns(), [0, 1])
-        self.assertEqual(dst.get_used_samples(), [7, 11])
+        self.assertEqual(dst.get_used_samples(scope="sequence"), [7])
+        self.assertEqual(dst.get_used_samples(scope="reachable"), [7])
 
         xm = XMSong()
         xm.new_instrument("lead")
@@ -218,7 +219,8 @@ class SongPlanTests(unittest.TestCase):
             for row in range(64):
                 xm.patterns[1].data[channel][row] = type(xm.get_note(0, 0, 0))()
         xm.patterns[1].data[0][1].instrument_idx = 2
-        self.assertEqual(xm.get_used_instruments(), [1, 2])
+        self.assertEqual(xm.get_used_instruments(scope="sequence"), [1])
+        self.assertEqual(xm.get_used_instruments(scope="reachable"), [1])
 
     def test_mod_sample_count_stays_in_sync(self):
         song = MODSong()

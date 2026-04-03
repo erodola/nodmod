@@ -2415,14 +2415,81 @@ class XMSong(Song):
 
         return n
 
-    def get_used_instruments(self) -> list[int]:
-        used = set()
-        for pattern in self.patterns:
-            for channel in pattern.data:
-                for note in channel:
-                    if note.instrument_idx > 0:
-                        used.add(note.instrument_idx)
-        return sorted(used)
+    def get_used_instruments(
+        self,
+        *,
+        scope: str = "sequence",
+        order: str = "sorted",
+    ) -> list[int]:
+        """Return instrument indices referenced by notes under sequence or reachable scope."""
+        self._validate_used_resource_args(scope, order)
+        seen: set[int] = set()
+        first_use: list[int] = []
+        for note in self._iter_notes_by_scope(scope):
+            inst_idx = getattr(note, 'instrument_idx', 0)
+            if inst_idx > 0 and inst_idx not in seen:
+                seen.add(inst_idx)
+                first_use.append(inst_idx)
+        return self._finalize_used_values(first_use, order)
+
+    def get_used_samples(
+        self,
+        *,
+        scope: str = "sequence",
+        order: str = "sorted",
+    ) -> list[int]:
+        """Return flattened XM sample indices referenced by notes under sequence/reachable scope."""
+        self._validate_used_resource_args(scope, order)
+
+        # Flatten sample numbering to match iter_samples() stable ordering.
+        flat_by_instrument: dict[int, list[int]] = {}
+        flat_idx = 1
+        for inst_idx, inst in enumerate(self.instruments, start=1):
+            inst_flat = list(range(flat_idx, flat_idx + len(inst.samples)))
+            flat_by_instrument[inst_idx] = inst_flat
+            flat_idx += len(inst.samples)
+
+        seen: set[int] = set()
+        first_use: list[int] = []
+
+        def _record(flat_sample_idx: int) -> None:
+            if flat_sample_idx not in seen:
+                seen.add(flat_sample_idx)
+                first_use.append(flat_sample_idx)
+
+        for note in self._iter_notes_by_scope(scope):
+            inst_idx = getattr(note, 'instrument_idx', 0)
+            if inst_idx <= 0 or inst_idx > len(self.instruments):
+                continue
+            inst = self.instruments[inst_idx - 1]
+            inst_flat = flat_by_instrument.get(inst_idx, [])
+            if not inst_flat:
+                continue
+            if len(inst_flat) == 1:
+                _record(inst_flat[0])
+                continue
+
+            mapped_flat = None
+            period = getattr(note, 'period', '')
+            if period not in {'', 'off'} and len(inst.sample_map) == 96:
+                try:
+                    note_idx = Song.note_to_index(period)
+                except (TypeError, ValueError):
+                    note_idx = None
+                if note_idx is not None:
+                    mapped_local = inst.sample_map[note_idx]
+                    if 0 <= mapped_local < len(inst_flat):
+                        mapped_flat = inst_flat[mapped_local]
+
+            if mapped_flat is not None:
+                _record(mapped_flat)
+                continue
+
+            # Ambiguous sample selection (no note or no mapping): include all samples of the instrument.
+            for candidate in inst_flat:
+                _record(candidate)
+
+        return self._finalize_used_values(first_use, order)
 
     def get_effective_row_count(self, sequence_idx: int, include_loops: bool = True) -> int:
         """
