@@ -2,13 +2,15 @@
 
 [![CI](https://github.com/erodola/nodmod/actions/workflows/ci.yml/badge.svg)](https://github.com/erodola/nodmod/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases)
-[![API Stability](https://img.shields.io/badge/API-stable-brightgreen)](https://github.com/erodola/nodmod/releases/tag/v1.0.0)
+[![API Stability](https://img.shields.io/badge/API-stable-brightgreen)](https://github.com/erodola/nodmod/releases/tag/v1.0.1)
 [![Python](https://img.shields.io/badge/python-3.11-blue)](https://github.com/erodola/nodmod/blob/main/pyproject.toml)
 [![License](https://img.shields.io/github/license/erodola/nodmod)](https://github.com/erodola/nodmod/blob/main/LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/erodola/nodmod)](https://github.com/erodola/nodmod/commits/main)
 [![Formats](https://img.shields.io/badge/formats-MOD%20%7C%20XM%20%7C%20S3M-4c8bf5)](https://github.com/erodola/nodmod)
 
 NodMOD is a Python library for reading, editing, and writing tracker modules.
+
+Current stable release: `v1.0.1`.
 
 It currently focuses on three classic formats:
 
@@ -144,6 +146,7 @@ song.render("music/render.wav", channels=2)
 ## New API Additions
 
 Recent enhancements add inspection-focused, additive APIs without breaking existing method signatures.
+The `v1.0.1` release extends motif-analysis traversal, playback-aware timelines, reachability scans, and one-call loading.
 
 ```python
 from nodmod import MODSong
