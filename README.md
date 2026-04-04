@@ -2,13 +2,15 @@
 
 [![CI](https://github.com/erodola/nodmod/actions/workflows/ci.yml/badge.svg)](https://github.com/erodola/nodmod/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases)
-[![API Stability](https://img.shields.io/badge/API-stable-brightgreen)](https://github.com/erodola/nodmod/releases/tag/v1.0.0)
+[![API Stability](https://img.shields.io/badge/API-stable-brightgreen)](https://github.com/erodola/nodmod/releases/tag/v1.0.1)
 [![Python](https://img.shields.io/badge/python-3.11-blue)](https://github.com/erodola/nodmod/blob/main/pyproject.toml)
 [![License](https://img.shields.io/github/license/erodola/nodmod)](https://github.com/erodola/nodmod/blob/main/LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/erodola/nodmod)](https://github.com/erodola/nodmod/commits/main)
 [![Formats](https://img.shields.io/badge/formats-MOD%20%7C%20XM%20%7C%20S3M-4c8bf5)](https://github.com/erodola/nodmod)
 
 NodMOD is a Python library for reading, editing, and writing tracker modules.
+
+Current stable release: `v1.0.1`.
 
 It currently focuses on three classic formats:
 
@@ -144,6 +146,7 @@ song.render("music/render.wav", channels=2)
 ## New API Additions
 
 Recent enhancements add inspection-focused, additive APIs without breaking existing method signatures.
+The `v1.0.1` release extends motif-analysis traversal, playback-aware timelines, reachability scans, and one-call loading.
 
 ```python
 from nodmod import MODSong
@@ -172,6 +175,8 @@ assert encode_mod_effect("F", 125) == "F7D"
 # Immutable snapshots for read-only analysis
 summary = song.view()
 cells = list(song.iter_cells(sequence_only=True))
+rows = list(song.iter_rows(sequence_only=True))
+effects = list(song.iter_effects(sequence_only=True, include_empty=False))
 samples = list(song.iter_samples(include_empty=False))
 ```
 
@@ -193,6 +198,33 @@ print(probe.detected_format, probe.supported, probe.metadata)
 # In-memory ASCII dump (no temp files needed)
 text = song.to_ascii(sequence_only=True, include_headers=False)
 ```
+
+```python
+# Playback-aware row timeline with source coordinates
+playback = list(song.iter_playback_rows(max_steps=250_000))
+first = playback[0]
+print(first.sequence_idx, first.pattern_idx, first.row, first.start_sec, first.end_sec)
+```
+
+```python
+# Reachability-aware used-resource scans
+mod_used = song.get_used_samples(scope="reachable", order="first_use")
+xm_insts = xm_song.get_used_instruments(scope="sequence", order="sorted")
+xm_samples = xm_song.get_used_samples(scope="reachable", order="sorted")
+s3m_used = s3m_song.get_used_samples(scope="reachable", order="sorted")
+```
+
+```python
+# One-call loading with format dispatch
+from nodmod import load_song
+
+song = load_song("music/demo.mod")
+```
+
+Scope semantics:
+
+- `scope="sequence"` inspects every row in sequence-referenced patterns.
+- `scope="reachable"` inspects rows actually visited during playback flow.
 
 ## Requirements
 

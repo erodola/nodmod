@@ -11,8 +11,9 @@ import shutil
 import subprocess
 from abc import ABC, abstractmethod
 
+from .effects import decode_mod_effect
 from .types import Note
-from .views import CellView, SampleView, SongView
+from .views import CellView, EffectView, RowView, SampleView, SongView
 
 __all__ = ['Song']
 
@@ -73,26 +74,153 @@ class Song(ABC):
             n_channels=n_channels,
         )
 
+    def _iter_pattern_entries(self, sequence_only: bool) -> list[tuple[int, int]]:
+        """Build deterministic traversal entries as (sequence_idx, pattern_idx)."""
+        if sequence_only:
+            entries: list[tuple[int, int]] = []
+            for seq_idx, pat_idx in enumerate(self.pattern_seq):
+                if 0 <= pat_idx < len(self.patterns):
+                    entries.append((seq_idx, pat_idx))
+            return entries
+        return [(-1, pat_idx) for pat_idx in range(len(self.patterns))]
+
+    @staticmethod
+    def _make_cell_view(
+        *,
+        sequence_idx: int,
+        pattern_idx: int,
+        row: int,
+        channel: int,
+        note,
+    ) -> CellView:
+        """Build one immutable cell snapshot from a concrete note object."""
+        vol_cmd = getattr(note, 'vol_cmd', None)
+        if vol_cmd == '':
+            vol_cmd = None
+        vol_val = getattr(note, 'vol_val', None)
+        if not isinstance(vol_val, int) or vol_val < 0:
+            vol_val = None
+        volume = getattr(note, 'volume', None)
+        if not isinstance(volume, int) or volume < 0:
+            volume = None
+        return CellView(
+            sequence_idx=sequence_idx,
+            pattern_idx=pattern_idx,
+            row=row,
+            channel=channel,
+            instrument_idx=getattr(note, 'instrument_idx', 0),
+            period=getattr(note, 'period', ''),
+            effect=getattr(note, 'effect', ''),
+            vol_cmd=vol_cmd,
+            vol_val=vol_val,
+            volume=volume,
+        )
+
     def iter_cells(self, *, sequence_only: bool = True):
         """Yield immutable cell snapshots in deterministic sequence,row,channel order."""
-        if sequence_only:
-            entries = [(seq_idx, pat_idx) for seq_idx, pat_idx in enumerate(self.pattern_seq)]
-        else:
-            entries = [(-1, pat_idx) for pat_idx in range(len(self.patterns))]
-        for sequence_idx, pattern_idx in entries:
+        for sequence_idx, pattern_idx in self._iter_pattern_entries(sequence_only):
             pat = self.patterns[pattern_idx]
             for row in range(pat.n_rows):
                 for channel in range(pat.n_channels):
                     note = pat.data[channel][row]
-                    yield CellView(
+                    yield self._make_cell_view(
                         sequence_idx=sequence_idx,
                         pattern_idx=pattern_idx,
                         row=row,
                         channel=channel,
-                        instrument_idx=getattr(note, 'instrument_idx', 0),
-                        period=getattr(note, 'period', ''),
-                        effect=getattr(note, 'effect', ''),
+                        note=note,
                     )
+
+    def iter_rows(self, *, sequence_only: bool = True, reachable_only: bool = False):
+        """Yield immutable row snapshots in deterministic sequence,row order."""
+        if reachable_only:
+            try:
+                for played_row in self.iter_playback_rows():
+                    pat = self.patterns[played_row.pattern_idx]
+                    cells = tuple(
+                        self._make_cell_view(
+                            sequence_idx=played_row.sequence_idx,
+                            pattern_idx=played_row.pattern_idx,
+                            row=played_row.row,
+                            channel=channel,
+                            note=pat.data[channel][played_row.row],
+                        )
+                        for channel in range(pat.n_channels)
+                    )
+                    yield RowView(
+                        sequence_idx=played_row.sequence_idx,
+                        pattern_idx=played_row.pattern_idx,
+                        row=played_row.row,
+                        cells=cells,
+                    )
+            except NotImplementedError as exc:
+                raise NotImplementedError(
+                    "iter_rows(reachable_only=True) requires iter_playback_rows() support for this song format."
+                ) from exc
+            return
+
+        for sequence_idx, pattern_idx in self._iter_pattern_entries(sequence_only):
+            pat = self.patterns[pattern_idx]
+            for row in range(pat.n_rows):
+                cells = tuple(
+                    self._make_cell_view(
+                        sequence_idx=sequence_idx,
+                        pattern_idx=pattern_idx,
+                        row=row,
+                        channel=channel,
+                        note=pat.data[channel][row],
+                    )
+                    for channel in range(pat.n_channels)
+                )
+                yield RowView(
+                    sequence_idx=sequence_idx,
+                    pattern_idx=pattern_idx,
+                    row=row,
+                    cells=cells,
+                )
+
+    def iter_effects(
+        self,
+        *,
+        sequence_only: bool = True,
+        include_empty: bool = False,
+        decoded: bool = True,
+    ):
+        """Yield immutable effect snapshots in deterministic sequence,row,channel order."""
+        for cell in self.iter_cells(sequence_only=sequence_only):
+            raw = cell.effect
+            if not include_empty and raw == '':
+                continue
+
+            command = None
+            arg = None
+            x = None
+            y = None
+            extended_cmd = None
+            if decoded and raw != '':
+                try:
+                    info = decode_mod_effect(raw)
+                except (TypeError, ValueError):
+                    info = None
+                if info is not None:
+                    command = info.command
+                    arg = info.arg
+                    x = info.x
+                    y = info.y
+                    extended_cmd = info.extended_cmd
+
+            yield EffectView(
+                sequence_idx=cell.sequence_idx,
+                pattern_idx=cell.pattern_idx,
+                row=cell.row,
+                channel=cell.channel,
+                raw=raw,
+                command=command,
+                arg=arg,
+                x=x,
+                y=y,
+                extended_cmd=extended_cmd,
+            )
 
     def iter_samples(self, *, include_empty: bool = True):
         """Yield immutable sample-slot snapshots for song formats with direct sample banks."""
@@ -114,6 +242,44 @@ class Song(ABC):
                 loop_start=getattr(sample, 'repeat_point', 0),
                 loop_length=getattr(sample, 'repeat_len', 0),
             )
+
+    @staticmethod
+    def _validate_used_resource_args(scope: str, order: str) -> None:
+        """Validate shared scope/order options used by used-resource APIs."""
+        if scope not in {"sequence", "reachable"}:
+            raise ValueError(f"Invalid scope {scope!r} (expected 'sequence' or 'reachable').")
+        if order not in {"sorted", "first_use"}:
+            raise ValueError(f"Invalid order {order!r} (expected 'sorted' or 'first_use').")
+
+    @staticmethod
+    def _finalize_used_values(first_use_values: list[int], order: str) -> list[int]:
+        """Finalize a unique first-use list into caller-requested output ordering."""
+        if order == "first_use":
+            return first_use_values
+        return sorted(first_use_values)
+
+    def _iter_notes_by_scope(self, scope: str):
+        """Yield note objects under the requested row-visibility scope."""
+        if scope == "sequence":
+            for _, pattern_idx in self._iter_pattern_entries(sequence_only=True):
+                if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+                    continue
+                pat = self.patterns[pattern_idx]
+                for row in range(pat.n_rows):
+                    for channel in range(pat.n_channels):
+                        yield pat.data[channel][row]
+            return
+
+        for played_row in self.iter_playback_rows():
+            pattern_idx = played_row.pattern_idx
+            if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+                continue
+            pat = self.patterns[pattern_idx]
+            row = played_row.row
+            if row < 0 or row >= pat.n_rows:
+                continue
+            for channel in range(pat.n_channels):
+                yield pat.data[channel][row]
 
     @staticmethod
     def _effect_text(note_or_effect) -> str:
@@ -331,6 +497,16 @@ class Song(ABC):
                  Within each list, each row is a triple (timestamp [s], speed, bpm).
         """
         pass
+
+    def iter_playback_rows(
+        self,
+        *,
+        profile: str | None = None,  # noqa: ARG002
+        exact: bool = True,  # noqa: ARG002
+        max_steps: int = 250_000,  # noqa: ARG002
+    ):
+        """Yield playback-order rows with timing metadata when supported by a concrete format."""
+        raise NotImplementedError("iter_playback_rows() is not implemented for this song format.")
 
     def get_song_duration(self) -> float:
         """

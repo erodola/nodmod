@@ -10,6 +10,7 @@ import os
 import pydub  # needed for loading WAV samples
 import copy
 import struct
+from .views import PlaybackRowView
 
 
 class MODSong(Song):
@@ -446,6 +447,158 @@ class MODSong(Song):
     SONG
     -------------------------------------
     '''
+
+    def iter_playback_rows(
+        self,
+        *,
+        profile: str | None = None,  # noqa: ARG002
+        exact: bool = True,  # noqa: ARG002
+        max_steps: int = 250_000,
+    ):
+        """Yield visited MOD rows with source coordinates and timing metadata."""
+        if max_steps <= 0:
+            raise ValueError(f"Invalid max_steps {max_steps} (expected > 0).")
+
+        bpm = 125
+        speed = 6
+        d = Song.get_tick_duration(bpm)
+
+        jump_to_position = -1
+        jump_to_pattern = -1
+        stop_song = False
+        self_jump_count = 0
+        self_jump_limit = 5
+        start_row = 0
+        elapsed = 0.0
+        visit_idx = 0
+
+        seq_idx = 0
+        while seq_idx < len(self.pattern_seq):
+            p = self.pattern_seq[seq_idx]
+            loop_start_row = [0] * MODSong.CHANNELS
+            loop_count = [0] * MODSong.CHANNELS
+
+            r = start_row
+            while r < MODSong.ROWS:
+                if visit_idx >= max_steps:
+                    raise RuntimeError(
+                        f"iter_playback_rows exceeded max_steps={max_steps}; possible runaway playback loop."
+                    )
+
+                if jump_to_position != -1:
+                    jump_to_position = -1
+                    start_row = 0
+
+                row_delay = 0
+                loop_jump_row = None
+                pending_jump_row = None
+                pending_jump_pattern = None
+                saw_self_jump = False
+
+                for c in range(MODSong.CHANNELS):
+                    efx = self.patterns[p].data[c][r].effect
+                    if efx == "":
+                        continue
+
+                    if efx[0] == "F":
+                        v = int(efx[1:], 16)
+                        if v <= 31:
+                            if v != 0:
+                                speed = v
+                        else:
+                            bpm = v
+                        d = Song.get_tick_duration(bpm)
+
+                    elif efx[0] == "D":
+                        if len(efx) >= 3:
+                            hi = int(efx[1], 16)
+                            lo = int(efx[2], 16)
+                            if len(self.pattern_seq) > 1:
+                                pending_jump_row = hi * 10 + lo
+
+                    elif efx[0] == "B":
+                        dest = int(efx[1:], 16)
+                        if dest < len(self.pattern_seq):
+                            if dest > seq_idx:
+                                pending_jump_pattern = dest
+                            elif dest == seq_idx:
+                                saw_self_jump = True
+                            else:
+                                stop_song = True
+
+                    elif efx[0] == "E" and len(efx) >= 3:
+                        cmd = efx[1].upper()
+                        val = int(efx[2], 16)
+                        if cmd == "6":
+                            if val == 0:
+                                old_loop_start = loop_start_row[c]
+                                loop_start_row[c] = r
+                                if loop_count[c] == -1 and r > old_loop_start:
+                                    loop_count[c] = 0
+                            else:
+                                if loop_count[c] == 0:
+                                    loop_count[c] = val
+                                if loop_count[c] > 0 and loop_start_row[c] < r:
+                                    loop_count[c] -= 1
+                                    loop_jump_row = loop_start_row[c]
+                                    if loop_count[c] == 0:
+                                        loop_count[c] = -1
+                        elif cmd == "E":
+                            row_delay = val
+
+                row_duration = d * speed
+                if row_delay > 0:
+                    row_duration *= (row_delay + 1)
+                start_sec = elapsed
+                elapsed += row_duration
+                yield PlaybackRowView(
+                    visit_idx=visit_idx,
+                    sequence_idx=seq_idx,
+                    pattern_idx=p,
+                    row=r,
+                    start_sec=start_sec,
+                    end_sec=elapsed,
+                    speed=speed,
+                    tempo=bpm,
+                )
+                visit_idx += 1
+
+                if stop_song:
+                    break
+
+                if saw_self_jump and pending_jump_row is not None and self_jump_count < self_jump_limit:
+                    pending_jump_pattern = seq_idx
+                    self_jump_count += 1
+
+                if loop_jump_row is not None:
+                    r = loop_jump_row
+                    continue
+
+                if pending_jump_pattern is not None:
+                    jump_to_pattern = pending_jump_pattern
+                    if pending_jump_row is not None:
+                        start_row = pending_jump_row
+                    else:
+                        start_row = 0
+                    break
+
+                if pending_jump_row is not None:
+                    jump_to_position = pending_jump_row
+                    start_row = jump_to_position
+                    break
+
+                r += 1
+
+            if stop_song:
+                break
+
+            if jump_to_pattern != -1:
+                seq_idx = jump_to_pattern
+                jump_to_pattern = -1
+                start_row = 0
+                continue
+
+            seq_idx += 1
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
@@ -1010,20 +1163,22 @@ class MODSong(Song):
                 self.samples[s] = Sample()
         self._update_n_actual_samples()
 
-    def get_used_samples(self) -> list[int]:
-        """Return sorted sample indices referenced by notes in the song.
-
-        The result is sorted numerically by sample index, not by first-use order.
-
-        :return: Referenced 1-based sample indices.
-        """
-        used = set()
-        for pattern in self.patterns:
-            for channel in pattern.data:
-                for note in channel:
-                    if note.instrument_idx > 0:
-                        used.add(note.instrument_idx)
-        return sorted(used)
+    def get_used_samples(
+        self,
+        *,
+        scope: str = "sequence",
+        order: str = "sorted",
+    ) -> list[int]:
+        """Return sample indices referenced by notes under sequence or reachable scope."""
+        self._validate_used_resource_args(scope, order)
+        seen: set[int] = set()
+        first_use: list[int] = []
+        for note in self._iter_notes_by_scope(scope):
+            sample_idx = getattr(note, 'instrument_idx', 0)
+            if sample_idx > 0 and sample_idx not in seen:
+                seen.add(sample_idx)
+                first_use.append(sample_idx)
+        return self._finalize_used_values(first_use, order)
     
     '''
     -------------------------------------

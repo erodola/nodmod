@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-04-04
+
+### API Stability
+
+All public APIs in this release are considered stable.
+
+### Added
+
+- Loader convenience API: `load_song(...)` with automatic MOD/XM/S3M dispatch.
+- Motif-analysis traversal APIs: `RowView`/`iter_rows(...)`, `EffectView`/`iter_effects(...)`, and playback timeline `iter_playback_rows(...)`.
+- Reachability-aware resource scans for used samples and XM instruments (`scope=sequence|reachable`, `order=first_use|sorted`).
+- Extended `CellView` parity fields for XM/S3M volume-column and S3M volume semantics.
+
+### Fixed
+
+- Base traversal APIs now skip invalid sequence pattern indices instead of failing on malformed `pattern_seq` entries.
+- XM sample I/O test now uses temporary paths and no longer assumes a pre-existing `dev/` directory in CI.
+
+### Testing
+
+- Added fixture-based equivalence tests that compare convenience APIs against manual workflows on the canonical MOD/XM/S3M songs in `music/`.
+
+### Documentation
+
+- README expanded with release highlights and usage examples for motif-analysis traversal and reachability helpers.
+
 ## [1.0.0] - 2026-04-03
 
 ### API Stability

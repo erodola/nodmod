@@ -14,7 +14,7 @@ from nodmod import Instrument
 from nodmod import EnvelopePoint
 from nodmod import Pattern
 from nodmod import XMNote
-from .views import SampleView
+from .views import PlaybackRowView, SampleView
 
 
 class XMSong(Song):
@@ -1205,6 +1205,189 @@ class XMSong(Song):
     -------------------------------------
     '''
 
+    def iter_playback_rows(
+        self,
+        *,
+        profile: str | None = None,  # noqa: ARG002
+        exact: bool = True,  # noqa: ARG002
+        max_steps: int = 250_000,
+    ):
+        """Yield visited XM rows with source coordinates and timing metadata."""
+        if max_steps <= 0:
+            raise ValueError(f"Invalid max_steps {max_steps} (expected > 0).")
+
+        bpm = self.default_tempo
+        speed = self.default_speed
+        d = Song.get_tick_duration(bpm)
+
+        jump_to_position = -1
+        jump_to_pattern = -1
+        stop_song = False
+        self_jump_count = 0
+        self_jump_limit = 5
+        start_row = 0
+        elapsed = 0.0
+        visit_idx = 0
+
+        loop_start_row = [0] * self.n_channels
+
+        seq_idx = 0
+        while seq_idx < len(self.pattern_seq):
+            p = self.pattern_seq[seq_idx]
+            if p < 0 or p >= len(self.patterns):
+                seq_idx += 1
+                continue
+            pat = self.patterns[p]
+            n_rows = pat.n_rows
+            n_channels = pat.n_channels
+
+            if n_channels != len(loop_start_row):
+                loop_start_row = [0] * n_channels
+
+            loop_count = [0] * n_channels
+            r = start_row
+            while r < n_rows:
+                if visit_idx >= max_steps:
+                    raise RuntimeError(
+                        f"iter_playback_rows exceeded max_steps={max_steps}; possible runaway playback loop."
+                    )
+
+                if jump_to_position != -1:
+                    jump_to_position = -1
+                    start_row = 0
+
+                row_delay = 0
+                loop_jump_row = None
+                pending_jump_row = None
+                pending_jump_pattern = None
+                saw_self_jump = False
+
+                for c in range(n_channels):
+                    efx = pat.data[c][r].effect
+                    if efx == "":
+                        continue
+
+                    if efx[0] == "F":
+                        if len(efx) < 2:
+                            continue
+                        try:
+                            v = int(efx[1:], 16)
+                        except ValueError:
+                            continue
+                        if v <= 31:
+                            if v != 0:
+                                speed = v
+                        else:
+                            bpm = v
+                        d = Song.get_tick_duration(bpm)
+
+                    elif efx[0] == "D":
+                        if len(self.pattern_seq) <= 1:
+                            continue
+                        if len(efx) == 1:
+                            pending_jump_row = 0
+                            continue
+                        param = efx[1:]
+                        if len(param) == 1:
+                            param = f"0{param}"
+                        try:
+                            hi = int(param[0], 16)
+                            lo = int(param[1], 16)
+                        except ValueError:
+                            continue
+                        pending_jump_row = hi * 10 + lo
+
+                    elif efx[0] == "B":
+                        param = efx[1:] if len(efx) > 1 else "00"
+                        try:
+                            dest = int(param, 16)
+                        except ValueError:
+                            continue
+                        if dest < len(self.pattern_seq):
+                            if dest > seq_idx:
+                                pending_jump_pattern = dest
+                            elif dest == seq_idx:
+                                saw_self_jump = True
+                            else:
+                                stop_song = True
+
+                    elif efx[0] == "E" and len(efx) >= 3:
+                        cmd = efx[1].upper()
+                        try:
+                            val = int(efx[2], 16)
+                        except ValueError:
+                            continue
+                        if cmd == "6":
+                            if val == 0:
+                                old_loop_start = loop_start_row[c]
+                                loop_start_row[c] = r
+                                if loop_count[c] == -1 and r > old_loop_start:
+                                    loop_count[c] = 0
+                            else:
+                                if loop_count[c] == 0:
+                                    loop_count[c] = val
+                                if loop_count[c] > 0 and loop_start_row[c] < r:
+                                    loop_count[c] -= 1
+                                    loop_jump_row = loop_start_row[c]
+                                    if loop_count[c] == 0:
+                                        loop_count[c] = -1
+                        elif cmd == "E":
+                            row_delay = val
+
+                row_duration = d * speed
+                if row_delay > 0:
+                    row_duration *= (row_delay + 1)
+                start_sec = elapsed
+                elapsed += row_duration
+                yield PlaybackRowView(
+                    visit_idx=visit_idx,
+                    sequence_idx=seq_idx,
+                    pattern_idx=p,
+                    row=r,
+                    start_sec=start_sec,
+                    end_sec=elapsed,
+                    speed=speed,
+                    tempo=bpm,
+                )
+                visit_idx += 1
+
+                if stop_song:
+                    break
+
+                if saw_self_jump and pending_jump_row is not None and self_jump_count < self_jump_limit:
+                    pending_jump_pattern = seq_idx
+                    self_jump_count += 1
+
+                if loop_jump_row is not None:
+                    r = loop_jump_row
+                    continue
+
+                if pending_jump_pattern is not None:
+                    jump_to_pattern = pending_jump_pattern
+                    if pending_jump_row is not None:
+                        start_row = pending_jump_row
+                    else:
+                        start_row = 0
+                    break
+
+                if pending_jump_row is not None:
+                    jump_to_position = pending_jump_row
+                    start_row = jump_to_position
+                    break
+
+                r += 1
+
+            if stop_song:
+                break
+
+            if jump_to_pattern != -1:
+                seq_idx = jump_to_pattern
+                jump_to_pattern = -1
+                start_row = 0
+                continue
+
+            seq_idx += 1
+
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
         Annotates the time of each row in the song, taking into account the speed and bpm changes.
@@ -2232,14 +2415,81 @@ class XMSong(Song):
 
         return n
 
-    def get_used_instruments(self) -> list[int]:
-        used = set()
-        for pattern in self.patterns:
-            for channel in pattern.data:
-                for note in channel:
-                    if note.instrument_idx > 0:
-                        used.add(note.instrument_idx)
-        return sorted(used)
+    def get_used_instruments(
+        self,
+        *,
+        scope: str = "sequence",
+        order: str = "sorted",
+    ) -> list[int]:
+        """Return instrument indices referenced by notes under sequence or reachable scope."""
+        self._validate_used_resource_args(scope, order)
+        seen: set[int] = set()
+        first_use: list[int] = []
+        for note in self._iter_notes_by_scope(scope):
+            inst_idx = getattr(note, 'instrument_idx', 0)
+            if inst_idx > 0 and inst_idx not in seen:
+                seen.add(inst_idx)
+                first_use.append(inst_idx)
+        return self._finalize_used_values(first_use, order)
+
+    def get_used_samples(
+        self,
+        *,
+        scope: str = "sequence",
+        order: str = "sorted",
+    ) -> list[int]:
+        """Return flattened XM sample indices referenced by notes under sequence/reachable scope."""
+        self._validate_used_resource_args(scope, order)
+
+        # Flatten sample numbering to match iter_samples() stable ordering.
+        flat_by_instrument: dict[int, list[int]] = {}
+        flat_idx = 1
+        for inst_idx, inst in enumerate(self.instruments, start=1):
+            inst_flat = list(range(flat_idx, flat_idx + len(inst.samples)))
+            flat_by_instrument[inst_idx] = inst_flat
+            flat_idx += len(inst.samples)
+
+        seen: set[int] = set()
+        first_use: list[int] = []
+
+        def _record(flat_sample_idx: int) -> None:
+            if flat_sample_idx not in seen:
+                seen.add(flat_sample_idx)
+                first_use.append(flat_sample_idx)
+
+        for note in self._iter_notes_by_scope(scope):
+            inst_idx = getattr(note, 'instrument_idx', 0)
+            if inst_idx <= 0 or inst_idx > len(self.instruments):
+                continue
+            inst = self.instruments[inst_idx - 1]
+            inst_flat = flat_by_instrument.get(inst_idx, [])
+            if not inst_flat:
+                continue
+            if len(inst_flat) == 1:
+                _record(inst_flat[0])
+                continue
+
+            mapped_flat = None
+            period = getattr(note, 'period', '')
+            if period not in {'', 'off'} and len(inst.sample_map) == 96:
+                try:
+                    note_idx = Song.note_to_index(period)
+                except (TypeError, ValueError):
+                    note_idx = None
+                if note_idx is not None:
+                    mapped_local = inst.sample_map[note_idx]
+                    if 0 <= mapped_local < len(inst_flat):
+                        mapped_flat = inst_flat[mapped_local]
+
+            if mapped_flat is not None:
+                _record(mapped_flat)
+                continue
+
+            # Ambiguous sample selection (no note or no mapping): include all samples of the instrument.
+            for candidate in inst_flat:
+                _record(candidate)
+
+        return self._finalize_used_values(first_use, order)
 
     def get_effective_row_count(self, sequence_idx: int, include_loops: bool = True) -> int:
         """
