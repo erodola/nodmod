@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import os
 import wave
 import array
+import tempfile
+from pathlib import Path
 
 from nodmod import XMSong
 from nodmod.types import XMSample
@@ -22,18 +23,20 @@ def test_load_and_save_sample():
     song = XMSong()
     inst_idx = song.new_instrument("SampleIO")
 
-    wav_in = os.path.join(os.getcwd(), "dev", "_xm_sample_in.wav")
-    wav_out = os.path.join(os.getcwd(), "dev", "_xm_sample_out.wav")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+        wav_in = tmpdir_path / "_xm_sample_in.wav"
+        wav_out = tmpdir_path / "_xm_sample_out.wav"
 
-    write_test_wav(wav_in)
+        write_test_wav(str(wav_in))
 
-    sample_idx = song.load_sample(inst_idx, wav_in)
-    smp = song.get_sample(inst_idx, sample_idx)
-    assert isinstance(smp, XMSample)
-    assert len(smp.waveform) == 4
+        sample_idx = song.load_sample(inst_idx, str(wav_in))
+        smp = song.get_sample(inst_idx, sample_idx)
+        assert isinstance(smp, XMSample)
+        assert len(smp.waveform) == 4
 
-    song.save_sample(inst_idx, sample_idx, wav_out)
-    assert os.path.isfile(wav_out)
+        song.save_sample(inst_idx, sample_idx, str(wav_out))
+        assert wav_out.is_file()
 
 
 def main() -> int:
