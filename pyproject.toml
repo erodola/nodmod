@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nodmod"
 version = "1.0.0"
-description = "Read, edit, and write .MOD music files"
+description = "Read, edit, and write tracker modules (MOD, XM, S3M)."
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Emanuele Rodolà", email = "rodola@di.uniroma1.it"}
+    {name = "Emanuele Rodolà", email = "e.rodola@gmail.com"}
 ]
 requires-python = "==3.11.*"
 dependencies = [
