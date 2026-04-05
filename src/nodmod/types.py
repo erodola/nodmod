@@ -240,6 +240,86 @@ class Sample:
         """Return sample length in samples (not bytes)."""
         return len(self.waveform)
 
+    def validate_loop(self) -> None:
+        """Validate loop metadata against waveform bounds.
+
+        Validation is strict and canonical:
+        - loop start/length must be non-negative
+        - empty waveforms must have loop metadata disabled (`0,0`)
+        - loop start must be inside waveform bounds for active loops
+        - loop end must not exceed waveform length
+        - loop lengths `<= 1` are considered disabled and must be canonicalized
+          to `repeat_point=0`, `repeat_len=0`
+        """
+        start = int(self.repeat_point)
+        length = int(self.repeat_len)
+        n = len(self.waveform)
+
+        if start < 0:
+            raise ValueError(f"Loop start {start} cannot be negative.")
+        if length < 0:
+            raise ValueError(f"Loop length {length} cannot be negative.")
+
+        if n == 0:
+            if start != 0 or length != 0:
+                raise ValueError(
+                    "Empty waveform requires loop metadata to be disabled "
+                    "(repeat_point=0, repeat_len=0)."
+                )
+            return
+
+        if length <= 1:
+            if start != 0 or length != 0:
+                raise ValueError(
+                    "Loop length <= 1 is treated as no loop; "
+                    "use repeat_point=0 and repeat_len=0."
+                )
+            return
+
+        if start >= n:
+            raise ValueError(f"Loop start {start} is outside sample length {n}.")
+        if start + length > n:
+            raise ValueError(f"Loop end {start + length} exceeds sample length {n}.")
+
+    def sanitize_loop(self, *, mode: str = "coerce") -> None:
+        """Normalize loop metadata to safe in-bounds values.
+
+        Supported modes:
+        - `coerce` (default): clamp and disable invalid loops according to
+          nodmod's MOD-compatible safety rules.
+        """
+        if mode != "coerce":
+            raise ValueError(f"Invalid sanitize mode {mode!r} (expected 'coerce').")
+
+        start = int(self.repeat_point)
+        length = int(self.repeat_len)
+        n = len(self.waveform)
+
+        start = max(0, start)
+        length = max(0, length)
+
+        if n == 0:
+            self.repeat_point = 0
+            self.repeat_len = 0
+            return
+
+        if start >= n:
+            self.repeat_point = 0
+            self.repeat_len = 0
+            return
+
+        max_len = n - start
+        if length > max_len:
+            length = max_len
+
+        if length <= 1:
+            self.repeat_point = 0
+            self.repeat_len = 0
+            return
+
+        self.repeat_point = start
+        self.repeat_len = length
+
 
 class XMSample(Sample):
     """

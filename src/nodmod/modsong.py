@@ -408,17 +408,22 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save(self, fname: str, verbose: bool = True):
+    def save(self, fname: str, verbose: bool = True, *, validate_samples: bool = False):
         """
         Saves the song as a standard MOD file.
 
         :param fname: Complete file path.
         :param verbose: False for silent saving.
+        :param validate_samples: When True, fail early if any sample loop
+            metadata is out of bounds.
         :return: None.
         """
 
         if verbose:
             print(f'Saving to {fname}... ', end='', flush=True)
+
+        if validate_samples:
+            self.validate_samples()
 
         if len(self.pattern_seq) == 0 or len(self.pattern_seq) > 128 or len(self.patterns) > 128:
             raise OverflowError(f"Too many patterns (sequence: {len(self.pattern_seq)}, unique: {len(self.patterns)}). MOD supports up to 128.")
@@ -1077,23 +1082,34 @@ class MODSong(Song):
         smp.repeat_point = start_byte
         smp.repeat_len = length_byte
 
+    def sanitize_samples(self, *, mode: str = "coerce") -> None:
+        """Sanitize loop metadata for all MOD sample slots.
+
+        This is a convenience wrapper around ``Sample.sanitize_loop``.
+        """
+        for smp in self.samples:
+            smp.sanitize_loop(mode=mode)
+
+    def validate_samples(self) -> None:
+        """Validate loop metadata for all MOD sample slots.
+
+        :raises ValueError: If any slot contains invalid loop metadata.
+        """
+        for sample_idx, smp in enumerate(self.samples, start=1):
+            try:
+                smp.validate_loop()
+            except ValueError as exc:
+                raise ValueError(f"Sample {sample_idx}: {exc}") from exc
 
     def validate_sample_loop(self, sample_idx: int) -> None:
-        """Validate that a MOD sample loop stays within waveform bounds.
+        """Validate one MOD sample loop using canonical safety rules.
 
-        MOD loop values are expressed in samples, not bytes. A loop length of 0
-        or 1 is treated as effectively disabled and therefore passes validation.
+        This delegates to ``Sample.validate_loop`` for the selected slot.
 
         :param sample_idx: The 1-based sample index to validate.
         """
         smp = self.get_sample(sample_idx)
-        n = len(smp.waveform)
-        if smp.repeat_len <= 1:
-            return
-        if smp.repeat_point < 0:
-            raise ValueError("Loop start cannot be negative.")
-        if smp.repeat_point + smp.repeat_len > n:
-            raise ValueError(f"Loop end {smp.repeat_point + smp.repeat_len} exceeds sample length {n}.")
+        smp.validate_loop()
 
 
     def get_sample_duration(self, sample_idx: int, period: str = "C-5") -> float:

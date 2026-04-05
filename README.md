@@ -29,6 +29,7 @@ The project is built around direct programmatic editing. You load or create a so
 - Import WAV audio into MOD samples or XM instrument samples
 - Export human-readable ASCII dumps for inspection
 - Render modules to WAV through external tools when available
+- Validate/sanitize MOD sample-loop metadata before strict saves
 
 ## Installation
 
@@ -117,6 +118,7 @@ The API is intentionally close to tracker structure rather than trying to hide i
 - MOD notes reference samples directly.
 - MOD read APIs (`get_note`, `iter_cells`, `iter_rows`, `get_used_samples`) resolve sample-memory semantics by default: note rows with sample `00` inherit the last latched sample in the same channel.
 - In MOD, sample-only rows (sample set with empty note) are valid and update that channel's latched sample for later note rows.
+- MOD sample slots expose loop safety helpers (`Sample.validate_loop`, `Sample.sanitize_loop`, `MODSong.validate_samples`, `MODSong.sanitize_samples`) and `save(..., validate_samples=True)` for strict pre-save validation.
 - Use `get_note_raw(...)` (and `resolved=False` where available) when you need exact raw MOD cell sample nibbles.
 - XM notes reference instruments, and instruments contain samples.
 - S3M notes reference sample / instrument slots directly for PCM modules.
