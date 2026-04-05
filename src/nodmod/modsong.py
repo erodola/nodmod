@@ -6,11 +6,10 @@ from nodmod import Sample
 from nodmod import Pattern
 from nodmod import Note
 import array
-import os
 import pydub  # needed for loading WAV samples
 import copy
 import struct
-from .views import PlaybackRowView
+from .views import CellView, PlaybackRowView, RowView
 
 
 class MODSong(Song):
@@ -64,9 +63,107 @@ class MODSong(Song):
         self.n_actual_samples = 0  # The number of non-empty samples present in the song.
         self._restart_position_raw = 127
 
+        # Mutation-versioned caches for MOD sample-memory resolution.
+        self._resolution_version = 0
+        self._resolved_sequence_cache_version = -1
+        self._resolved_reachable_cache_version = -1
+        self._resolved_sequence_cells: dict[tuple[int, int, int], int] = {}
+        self._resolved_sequence_first_use: list[int] = []
+        self._resolved_reachable_cells: dict[tuple[int, int], int] = {}
+        self._resolved_reachable_first_use: list[int] = []
+        self._resolved_reachable_rows: tuple[PlaybackRowView, ...] = ()
+
     def _update_n_actual_samples(self) -> None:
         """Refresh the cached count of non-empty sample slots."""
         self.n_actual_samples = sum(1 for sample in self.samples if len(sample.waveform) > 0)
+
+    def _on_mutation(self) -> None:
+        """Invalidate MOD resolved-sample caches after note/sequence mutations."""
+        self._resolution_version += 1
+
+    @staticmethod
+    def _resolve_effective_sample(raw_sample: int, period: str, latched_sample: int) -> tuple[int, int]:
+        """Resolve one MOD cell's effective sample using channel-local sample memory."""
+        if raw_sample > 0:
+            latched_sample = raw_sample
+        if period != '':
+            if raw_sample > 0:
+                return raw_sample, latched_sample
+            return latched_sample, latched_sample
+        return raw_sample, latched_sample
+
+    def _ensure_sequence_resolution_cache(self) -> None:
+        """Build or reuse the sequence-scope effective-sample cache."""
+        if self._resolved_sequence_cache_version == self._resolution_version:
+            return
+        latched = [0] * MODSong.CHANNELS
+        cells: dict[tuple[int, int, int], int] = {}
+        seen: set[int] = set()
+        first_use: list[int] = []
+
+        for sequence_idx, pattern_idx in enumerate(self.pattern_seq):
+            if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+                continue
+            pat = self.patterns[pattern_idx]
+            n_channels = min(pat.n_channels, MODSong.CHANNELS)
+            for row in range(pat.n_rows):
+                for channel in range(n_channels):
+                    note = pat.data[channel][row]
+                    raw_sample = int(getattr(note, 'instrument_idx', 0))
+                    period = getattr(note, 'period', '')
+                    effective_sample, latched[channel] = self._resolve_effective_sample(
+                        raw_sample,
+                        period,
+                        latched[channel],
+                    )
+                    cells[(sequence_idx, row, channel)] = effective_sample
+                    used_sample = effective_sample if period != '' else raw_sample
+                    if used_sample > 0 and used_sample not in seen:
+                        seen.add(used_sample)
+                        first_use.append(used_sample)
+
+        self._resolved_sequence_cells = cells
+        self._resolved_sequence_first_use = first_use
+        self._resolved_sequence_cache_version = self._resolution_version
+
+    def _ensure_reachable_resolution_cache(self) -> None:
+        """Build or reuse the reachable-scope effective-sample cache."""
+        if self._resolved_reachable_cache_version == self._resolution_version:
+            return
+        played_rows = tuple(self.iter_playback_rows())
+        latched = [0] * MODSong.CHANNELS
+        cells: dict[tuple[int, int], int] = {}
+        seen: set[int] = set()
+        first_use: list[int] = []
+
+        for played_row in played_rows:
+            pattern_idx = played_row.pattern_idx
+            if pattern_idx < 0 or pattern_idx >= len(self.patterns):
+                continue
+            pat = self.patterns[pattern_idx]
+            row = played_row.row
+            if row < 0 or row >= pat.n_rows:
+                continue
+            n_channels = min(pat.n_channels, MODSong.CHANNELS)
+            for channel in range(n_channels):
+                note = pat.data[channel][row]
+                raw_sample = int(getattr(note, 'instrument_idx', 0))
+                period = getattr(note, 'period', '')
+                effective_sample, latched[channel] = self._resolve_effective_sample(
+                    raw_sample,
+                    period,
+                    latched[channel],
+                )
+                cells[(played_row.visit_idx, channel)] = effective_sample
+                used_sample = effective_sample if period != '' else raw_sample
+                if used_sample > 0 and used_sample not in seen:
+                    seen.add(used_sample)
+                    first_use.append(used_sample)
+
+        self._resolved_reachable_cells = cells
+        self._resolved_reachable_first_use = first_use
+        self._resolved_reachable_rows = played_rows
+        self._resolved_reachable_cache_version = self._resolution_version
 
     @staticmethod
     def period_to_note(period_value: int) -> str:
@@ -133,19 +230,20 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def load(self, fname: str, verbose: bool = True):
+    def load(self, fname: str, verbose: bool = True, *, metadata_from_filename: bool = False):
         """
         Loads a song from a standard MOD file.
 
         :param fname: The path to the module file.
         :param verbose: False for silent loading.
+        :param metadata_from_filename: When True, override metadata after load
+            using ``artist - title`` parsing from the file path. By default,
+            metadata is read from MOD file bytes.
         :return: None.
         """
 
         if verbose:
             print(f'Loading {fname}... ', end='', flush=True)
-
-        self.artist, self.songname = Song.artist_songname_from_filename(fname)
 
         with (open(fname, 'rb') as mod_file):
 
@@ -158,6 +256,9 @@ class MODSong(Song):
                     return raw.decode('utf-8')
                 except UnicodeDecodeError:
                     return raw.decode('latin-1')
+
+            self.artist = "Unknown Artist"
+            self.songname = _decode_header_bytes(bytes(data[:20])).rstrip('\x00')
 
             magic_string = _decode_header_bytes(data[1080:1080 + 4])
             accepted_magic = {"M.K.", "M!K!", "FLT4"}  # 4-channel variants
@@ -284,6 +385,10 @@ class MODSong(Song):
 
                 self.patterns.append(pat)
 
+        if metadata_from_filename:
+            self.artist, self.songname = Song.artist_songname_from_filename(fname)
+
+        self._on_mutation()
         if verbose:
             print('done.')
 
@@ -302,17 +407,22 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save(self, fname: str, verbose: bool = True):
+    def save(self, fname: str, verbose: bool = True, *, validate_samples: bool = False):
         """
         Saves the song as a standard MOD file.
 
         :param fname: Complete file path.
         :param verbose: False for silent saving.
+        :param validate_samples: When True, fail early if any sample loop
+            metadata is out of bounds.
         :return: None.
         """
 
         if verbose:
             print(f'Saving to {fname}... ', end='', flush=True)
+
+        if validate_samples:
+            self.validate_samples()
 
         if len(self.pattern_seq) == 0 or len(self.pattern_seq) > 128 or len(self.patterns) > 128:
             raise OverflowError(f"Too many patterns (sequence: {len(self.pattern_seq)}, unique: {len(self.patterns)}). MOD supports up to 128.")
@@ -971,23 +1081,34 @@ class MODSong(Song):
         smp.repeat_point = start_byte
         smp.repeat_len = length_byte
 
+    def sanitize_samples(self, *, mode: str = "coerce") -> None:
+        """Sanitize loop metadata for all MOD sample slots.
+
+        This is a convenience wrapper around ``Sample.sanitize_loop``.
+        """
+        for smp in self.samples:
+            smp.sanitize_loop(mode=mode)
+
+    def validate_samples(self) -> None:
+        """Validate loop metadata for all MOD sample slots.
+
+        :raises ValueError: If any slot contains invalid loop metadata.
+        """
+        for sample_idx, smp in enumerate(self.samples, start=1):
+            try:
+                smp.validate_loop()
+            except ValueError as exc:
+                raise ValueError(f"Sample {sample_idx}: {exc}") from exc
 
     def validate_sample_loop(self, sample_idx: int) -> None:
-        """Validate that a MOD sample loop stays within waveform bounds.
+        """Validate one MOD sample loop using canonical safety rules.
 
-        MOD loop values are expressed in samples, not bytes. A loop length of 0
-        or 1 is treated as effectively disabled and therefore passes validation.
+        This delegates to ``Sample.validate_loop`` for the selected slot.
 
         :param sample_idx: The 1-based sample index to validate.
         """
         smp = self.get_sample(sample_idx)
-        n = len(smp.waveform)
-        if smp.repeat_len <= 1:
-            return
-        if smp.repeat_point < 0:
-            raise ValueError("Loop start cannot be negative.")
-        if smp.repeat_point + smp.repeat_len > n:
-            raise ValueError(f"Loop end {smp.repeat_point + smp.repeat_len} exceeds sample length {n}.")
+        smp.validate_loop()
 
 
     def get_sample_duration(self, sample_idx: int, period: str = "C-5") -> float:
@@ -1168,9 +1289,32 @@ class MODSong(Song):
         *,
         scope: str = "sequence",
         order: str = "sorted",
+        resolved: bool = True,
     ) -> list[int]:
-        """Return sample indices referenced by notes under sequence or reachable scope."""
+        """Return MOD sample indices referenced under sequence or reachable scope.
+
+        Definitions:
+        - raw sample: the 4+4-bit sample number stored in a MOD cell (`00..31`)
+        - effective sample: channel-memory resolved sample used when a note period
+          is present with raw sample `00`
+
+        By default (`resolved=True`), MOD sample-memory semantics are applied:
+        note rows with raw `00` inherit the channel's most recently latched sample,
+        including across pattern boundaries in sequence/reachable traversal order.
+        If no sample has been latched yet in that channel, effective sample is `0`.
+
+        `resolved=False` returns legacy raw-cell behavior.
+        """
         self._validate_used_resource_args(scope, order)
+        if resolved:
+            if scope == "sequence":
+                self._ensure_sequence_resolution_cache()
+                first_use = list(self._resolved_sequence_first_use)
+            else:
+                self._ensure_reachable_resolution_cache()
+                first_use = list(self._resolved_reachable_first_use)
+            return self._finalize_used_values(first_use, order)
+
         seen: set[int] = set()
         first_use: list[int] = []
         for note in self._iter_notes_by_scope(scope):
@@ -1179,6 +1323,119 @@ class MODSong(Song):
                 seen.add(sample_idx)
                 first_use.append(sample_idx)
         return self._finalize_used_values(first_use, order)
+
+    def iter_cells(self, *, sequence_only: bool = True, resolved: bool = True):
+        """Yield immutable MOD cell snapshots.
+
+        With ``resolved=True`` (default) and ``sequence_only=True``, returned
+        ``CellView.instrument_idx`` uses MOD effective sample-memory semantics.
+        With ``resolved=False`` or ``sequence_only=False``, raw stored sample
+        nibbles are exposed.
+        """
+        if not resolved or not sequence_only:
+            yield from super().iter_cells(sequence_only=sequence_only)
+            return
+
+        self._ensure_sequence_resolution_cache()
+        for sequence_idx, pattern_idx in self._iter_pattern_entries(sequence_only=True):
+            pat = self.patterns[pattern_idx]
+            for row in range(pat.n_rows):
+                for channel in range(pat.n_channels):
+                    raw_note = pat.data[channel][row]
+                    raw_sample = int(getattr(raw_note, 'instrument_idx', 0))
+                    effective_sample = self._resolved_sequence_cells.get((sequence_idx, row, channel), raw_sample)
+                    view_note = raw_note
+                    if effective_sample != raw_sample:
+                        view_note = Note(effective_sample, raw_note.period, raw_note.effect)
+                    yield self._make_cell_view(
+                        sequence_idx=sequence_idx,
+                        pattern_idx=pattern_idx,
+                        row=row,
+                        channel=channel,
+                        note=view_note,
+                    )
+
+    def iter_rows(
+        self,
+        *,
+        sequence_only: bool = True,
+        reachable_only: bool = False,
+        resolved: bool = True,
+    ):
+        """Yield immutable MOD row snapshots.
+
+        With ``resolved=True`` (default), ``CellView.instrument_idx`` follows
+        MOD effective sample-memory semantics under sequence or reachable
+        traversal. With ``resolved=False``, raw stored sample nibbles are used.
+        """
+        if not resolved:
+            yield from super().iter_rows(sequence_only=sequence_only, reachable_only=reachable_only)
+            return
+
+        if reachable_only:
+            self._ensure_reachable_resolution_cache()
+            for played_row in self._resolved_reachable_rows:
+                if played_row.pattern_idx < 0 or played_row.pattern_idx >= len(self.patterns):
+                    continue
+                pat = self.patterns[played_row.pattern_idx]
+                if played_row.row < 0 or played_row.row >= pat.n_rows:
+                    continue
+                cells: list[CellView] = []
+                for channel in range(pat.n_channels):
+                    raw_note = pat.data[channel][played_row.row]
+                    raw_sample = int(getattr(raw_note, 'instrument_idx', 0))
+                    effective_sample = self._resolved_reachable_cells.get((played_row.visit_idx, channel), raw_sample)
+                    view_note = raw_note
+                    if effective_sample != raw_sample:
+                        view_note = Note(effective_sample, raw_note.period, raw_note.effect)
+                    cells.append(
+                        self._make_cell_view(
+                            sequence_idx=played_row.sequence_idx,
+                            pattern_idx=played_row.pattern_idx,
+                            row=played_row.row,
+                            channel=channel,
+                            note=view_note,
+                        )
+                    )
+                yield RowView(
+                    sequence_idx=played_row.sequence_idx,
+                    pattern_idx=played_row.pattern_idx,
+                    row=played_row.row,
+                    cells=tuple(cells),
+                )
+            return
+
+        if not sequence_only:
+            yield from super().iter_rows(sequence_only=False, reachable_only=False)
+            return
+
+        self._ensure_sequence_resolution_cache()
+        for sequence_idx, pattern_idx in self._iter_pattern_entries(sequence_only=True):
+            pat = self.patterns[pattern_idx]
+            for row in range(pat.n_rows):
+                cells: list[CellView] = []
+                for channel in range(pat.n_channels):
+                    raw_note = pat.data[channel][row]
+                    raw_sample = int(getattr(raw_note, 'instrument_idx', 0))
+                    effective_sample = self._resolved_sequence_cells.get((sequence_idx, row, channel), raw_sample)
+                    view_note = raw_note
+                    if effective_sample != raw_sample:
+                        view_note = Note(effective_sample, raw_note.period, raw_note.effect)
+                    cells.append(
+                        self._make_cell_view(
+                            sequence_idx=sequence_idx,
+                            pattern_idx=pattern_idx,
+                            row=row,
+                            channel=channel,
+                            note=view_note,
+                        )
+                    )
+                yield RowView(
+                    sequence_idx=sequence_idx,
+                    pattern_idx=pattern_idx,
+                    row=row,
+                    cells=tuple(cells),
+                )
     
     '''
     -------------------------------------
@@ -1223,6 +1480,7 @@ class MODSong(Song):
         for r in range(MODSong.ROWS):
             for c in range(MODSong.CHANNELS):
                 self.patterns[p].data[c][r] = Note()
+        self._on_mutation()
 
     def add_pattern(self) -> int:
         """
@@ -1233,6 +1491,7 @@ class MODSong(Song):
         self.patterns.append(Pattern(MODSong.ROWS, MODSong.CHANNELS))
         n = len(self.patterns) - 1
         self.pattern_seq.append(n)
+        self._on_mutation()
 
         return n
         
@@ -1317,6 +1576,7 @@ class MODSong(Song):
         for p in range(len(self.patterns)):
             for r in range(MODSong.ROWS):
                 self.patterns[p].data[channel][r] = Note()
+        self._on_mutation()
 
     def mute_channel(self, channel: int):
         """
@@ -1349,6 +1609,7 @@ class MODSong(Song):
                     new_note.effect = global_effect
                 
                 self.patterns[p].data[channel][r] = new_note
+        self._on_mutation()
 
     '''
     -------------------------------------
@@ -1395,14 +1656,11 @@ class MODSong(Song):
         else:
             return ""
 
-    def get_note(self, sequence_idx: int, row: int, channel: int) -> Note:
-        """
-        Returns the note object at the given pattern, row and channel.
-        
-        :param sequence_idx: The 0-based sequence index to read from.
-        :param row: The row index to read from, 0-based.
-        :param channel: The channel index to read from, 0-based.
-        :return: The note object.
+    def get_note_raw(self, sequence_idx: int, row: int, channel: int) -> Note:
+        """Return the stored raw MOD note cell without sample-memory resolution.
+
+        Raw sample values are the exact MOD cell sample nibble (`00..31`).
+        Use this accessor when byte-level fidelity is required.
         """
         if row < 0 or row >= MODSong.ROWS:
             raise IndexError(f"Invalid row index {row} (expected 0-63).")
@@ -1414,6 +1672,43 @@ class MODSong(Song):
             raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         return self.patterns[self.pattern_seq[sequence_idx]].data[channel][row]
+
+    def get_note(self, sequence_idx: int, row: int, channel: int, *, resolved: bool = True) -> Note:
+        """Return a MOD note cell with raw or effective sample semantics.
+
+        Definitions:
+        - raw sample: sample nibble stored in the MOD cell (`00..31`)
+        - effective sample: channel-memory resolved sample used when a note
+          period is present and raw sample is `00`
+
+        Default behavior (`resolved=True`):
+        - if period is present and raw sample is `00`, the most recently latched
+          sample for that channel is returned
+        - if no sample was ever latched on that channel, effective sample is `0`
+        - sample-only rows (raw sample > 0 with empty period) update latch state
+          for later note rows in that same channel
+        - sample memory carries across rows and pattern boundaries in sequence order
+
+        Performance:
+        - resolution is backed by a mutation-versioned lazy cache and is not
+          recomputed from scratch on every query
+
+        Return shape:
+        - when ``resolved=False``, returns the stored mutable note object
+        - when ``resolved=True``, returns the stored note object if raw/effective
+          sample match; otherwise returns a detached note snapshot with the
+          effective sample index
+        """
+        raw_note = self.get_note_raw(sequence_idx, row, channel)
+        if not resolved:
+            return raw_note
+
+        self._ensure_sequence_resolution_cache()
+        raw_sample = int(getattr(raw_note, 'instrument_idx', 0))
+        effective_sample = self._resolved_sequence_cells.get((sequence_idx, row, channel), raw_sample)
+        if effective_sample == raw_sample:
+            return raw_note
+        return Note(effective_sample, raw_note.period, raw_note.effect)
     
     '''
     -------------------------------------

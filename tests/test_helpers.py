@@ -4,7 +4,7 @@ import random
 import wave
 from typing import List, Tuple
 from nodmod import MODSong, S3MSong, XMSong
-from nodmod.types import MODNote, Note, S3MNote, S3MSample, XMNote, XMSample
+from nodmod.types import S3MNote, S3MSample
 
 
 def assert_true(cond: bool, msg: str) -> None:

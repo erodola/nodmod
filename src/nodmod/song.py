@@ -74,6 +74,14 @@ class Song(ABC):
             n_channels=n_channels,
         )
 
+    def _on_mutation(self) -> None:
+        """Hook called after successful in-memory song mutations.
+
+        Format-specific subclasses may override this to invalidate caches or
+        refresh derived data. The default implementation is a no-op.
+        """
+        return
+
     def _iter_pattern_entries(self, sequence_only: bool) -> list[tuple[int, int]]:
         """Build deterministic traversal entries as (sequence_idx, pattern_idx)."""
         if sequence_only:
@@ -117,7 +125,13 @@ class Song(ABC):
         )
 
     def iter_cells(self, *, sequence_only: bool = True):
-        """Yield immutable cell snapshots in deterministic sequence,row,channel order."""
+        """Yield immutable cell snapshots in deterministic sequence,row,channel order.
+
+        Notes:
+        - For most formats this is a direct snapshot of stored note cells.
+        - Subclasses may override this method to expose format-specific
+          interpreted views (for example MOD effective sample-memory semantics).
+        """
         for sequence_idx, pattern_idx in self._iter_pattern_entries(sequence_only):
             pat = self.patterns[pattern_idx]
             for row in range(pat.n_rows):
@@ -132,7 +146,13 @@ class Song(ABC):
                     )
 
     def iter_rows(self, *, sequence_only: bool = True, reachable_only: bool = False):
-        """Yield immutable row snapshots in deterministic sequence,row order."""
+        """Yield immutable row snapshots in deterministic sequence,row order.
+
+        Notes:
+        - For most formats row cells mirror stored note cells.
+        - Subclasses may override this method to expose format-specific
+          interpreted views (for example MOD effective sample-memory semantics).
+        """
         if reachable_only:
             try:
                 for played_row in self.iter_playback_rows():
@@ -623,10 +643,12 @@ class Song(ABC):
             raise IndexError(f"Invalid pattern index {pattern_idx} (expected 0-{len(self.patterns)-1}).")
         if sequence_position is None:
             self.pattern_seq.append(pattern_idx)
+            self._on_mutation()
             return
         if sequence_position < 0 or sequence_position > len(self.pattern_seq):
             raise IndexError(f"Invalid sequence position {sequence_position} (expected 0-{len(self.pattern_seq)}).")
         self.pattern_seq = self.pattern_seq[:sequence_position] + [pattern_idx] + self.pattern_seq[sequence_position:]
+        self._on_mutation()
 
 
     def set_sequence(self, seq: list[int]) -> None:
@@ -641,6 +663,7 @@ class Song(ABC):
             if idx < 0 or idx >= len(self.patterns):
                 raise IndexError(f"Invalid pattern index {idx} (expected 0-{len(self.patterns)-1}).")
         self.pattern_seq = list(seq)
+        self._on_mutation()
 
 
     def remove_patterns_after(self, sequence_idx: int):
@@ -655,6 +678,7 @@ class Song(ABC):
             raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         self.pattern_seq = self.pattern_seq[:sequence_idx + 1]
+        self._on_mutation()
 
     def remove_pattern(self, sequence_idx: int) -> None:
         """
@@ -671,6 +695,7 @@ class Song(ABC):
             raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         self.pattern_seq = self.pattern_seq[:sequence_idx] + self.pattern_seq[sequence_idx + 1:]
+        self._on_mutation()
 
     def remove_all_patterns(self, sequence_only: bool) -> None:
         """
@@ -682,6 +707,7 @@ class Song(ABC):
 
         if not sequence_only:
             self.patterns = []
+        self._on_mutation()
 
     def keep_pattern(self, sequence_idx: int) -> None:
         """
@@ -693,6 +719,7 @@ class Song(ABC):
             raise IndexError(f"Invalid sequence index {sequence_idx} (expected 0-{len(self.pattern_seq)-1}).")
 
         self.pattern_seq = [self.pattern_seq[sequence_idx]]
+        self._on_mutation()
 
     def insert_pattern(self, sequence_idx: int, after: bool = True) -> int:
         """
@@ -708,6 +735,7 @@ class Song(ABC):
         new_idx = len(self.patterns) - 1
         seq_pos = sequence_idx + 1 if after else sequence_idx
         self.pattern_seq = self.pattern_seq[:seq_pos] + [new_idx] + self.pattern_seq[seq_pos:]
+        self._on_mutation()
         return new_idx
 
     def duplicate_pattern(self, sequence_idx: int) -> int:
@@ -723,6 +751,7 @@ class Song(ABC):
         self.patterns.append(copy.deepcopy(self.patterns[self.pattern_seq[sequence_idx]]))
         n = len(self.patterns) - 1
         self.pattern_seq.append(n)
+        self._on_mutation()
 
         return n
 
@@ -739,6 +768,7 @@ class Song(ABC):
         self.patterns.append(copy.deepcopy(src_song.patterns[src_pattern_idx]))
         new_idx = len(self.patterns) - 1
         self.pattern_seq.append(new_idx)
+        self._on_mutation()
         return new_idx
 
     def is_pattern_empty(self, pattern: int) -> bool:
@@ -825,6 +855,7 @@ class Song(ABC):
             effect = self._preserved_effect(cur_note.effect)
 
         pat.data[channel][row] = Note(sample_idx, period, effect)
+        self._on_mutation()
 
     def clear_note(self, sequence_idx: int, channel: int, row: int):
         """
@@ -843,6 +874,7 @@ class Song(ABC):
         if row < 0 or row >= pat.n_rows:
             raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
         pat.data[channel][row] = type(pat.data[channel][row])()
+        self._on_mutation()
 
     def clear_row(self, sequence_idx: int, row: int):
         """
@@ -858,6 +890,7 @@ class Song(ABC):
             raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
         for channel in range(pat.n_channels):
             pat.data[channel][row] = type(pat.data[channel][row])()
+        self._on_mutation()
 
     def copy_row(self, src_sequence_idx: int, src_row: int, dst_sequence_idx: int, dst_row: int):
         """
@@ -881,6 +914,7 @@ class Song(ABC):
             dst_pat.data[channel][dst_row] = type(dst_pat.data[channel][dst_row])()
         for channel in range(min(src_pat.n_channels, dst_pat.n_channels)):
             dst_pat.data[channel][dst_row] = copy.deepcopy(src_pat.data[channel][src_row])
+        self._on_mutation()
 
     def shift_pattern(self, sequence_idx: int, delta_rows: int):
         """
@@ -902,6 +936,7 @@ class Song(ABC):
                 if 0 <= new_row < pat.n_rows:
                     new_rows[new_row] = copy.deepcopy(note)
             pat.data[channel] = new_rows
+        self._on_mutation()
 
     def copy_channel_data(self, src_sequence_idx: int, src_channel: int, dst_sequence_idx: int, dst_channel: int):
         """
@@ -916,6 +951,7 @@ class Song(ABC):
         dst_pat.data[dst_channel] = [type(dst_pat.data[dst_channel][row])() for row in range(dst_pat.n_rows)]
         for row in range(min(src_pat.n_rows, dst_pat.n_rows)):
             dst_pat.data[dst_channel][row] = copy.deepcopy(src_pat.data[src_channel][row])
+        self._on_mutation()
 
     def swap_channels(self, ch1: int, ch2: int):
         """
@@ -927,6 +963,7 @@ class Song(ABC):
             if ch1 < 0 or ch1 >= pat.n_channels or ch2 < 0 or ch2 >= pat.n_channels:
                 raise IndexError(f"Invalid channel indices {ch1}, {ch2} for pattern with {pat.n_channels} channels.")
             pat.data[ch1], pat.data[ch2] = pat.data[ch2], pat.data[ch1]
+        self._on_mutation()
 
     '''
     -------------------------------------
@@ -956,6 +993,7 @@ class Song(ABC):
         if row < 0 or row >= pat.n_rows:
             raise IndexError(f"Invalid row index {row} (expected 0-{pat.n_rows-1}).")
         pat.data[channel][row].effect = effect
+        self._on_mutation()
 
     @staticmethod
     def note_in_range(note_str: str, lo: str | int, hi: str | int) -> bool:
