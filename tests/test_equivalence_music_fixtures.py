@@ -48,19 +48,83 @@ def _iter_pattern_entries(song, sequence_only: bool):
             yield -1, pat_idx
 
 
+def _manual_mod_resolve_sample(raw_sample: int, period: str, latched_sample: int) -> tuple[int, int]:
+    if raw_sample > 0:
+        latched_sample = raw_sample
+    if period != "":
+        if raw_sample > 0:
+            return raw_sample, latched_sample
+        return latched_sample, latched_sample
+    return raw_sample, latched_sample
+
+
+def _manual_mod_sequence_effective_map(song: MODSong) -> dict[tuple[int, int, int], int]:
+    latched = [0] * MODSong.CHANNELS
+    out: dict[tuple[int, int, int], int] = {}
+    for seq_idx, pat_idx in _iter_pattern_entries(song, sequence_only=True):
+        pat = song.patterns[pat_idx]
+        for row in range(pat.n_rows):
+            for channel in range(pat.n_channels):
+                note = pat.data[channel][row]
+                raw = getattr(note, "instrument_idx", 0)
+                period = getattr(note, "period", "")
+                effective, latched[channel] = _manual_mod_resolve_sample(raw, period, latched[channel])
+                out[(seq_idx, row, channel)] = effective
+    return out
+
+
+def _manual_mod_used_sample_indices(song: MODSong, scope: str) -> list[int]:
+    values: list[int] = []
+    latched = [0] * MODSong.CHANNELS
+
+    if scope == "sequence":
+        for seq_idx, pat_idx in _iter_pattern_entries(song, sequence_only=True):
+            pat = song.patterns[pat_idx]
+            for row in range(pat.n_rows):
+                for channel in range(pat.n_channels):
+                    note = pat.data[channel][row]
+                    raw = getattr(note, "instrument_idx", 0)
+                    period = getattr(note, "period", "")
+                    effective, latched[channel] = _manual_mod_resolve_sample(raw, period, latched[channel])
+                    used = effective if period != "" else raw
+                    if used > 0:
+                        values.append(used)
+        return values
+
+    for played in song.iter_playback_rows():
+        pat = song.patterns[played.pattern_idx]
+        row = played.row
+        for channel in range(pat.n_channels):
+            note = pat.data[channel][row]
+            raw = getattr(note, "instrument_idx", 0)
+            period = getattr(note, "period", "")
+            effective, latched[channel] = _manual_mod_resolve_sample(raw, period, latched[channel])
+            used = effective if period != "" else raw
+            if used > 0:
+                values.append(used)
+    return values
+
+
 def _manual_iter_cells(song, sequence_only: bool):
+    mod_effective = None
+    if isinstance(song, MODSong) and sequence_only:
+        mod_effective = _manual_mod_sequence_effective_map(song)
+
     for seq_idx, pat_idx in _iter_pattern_entries(song, sequence_only=sequence_only):
         pat = song.patterns[pat_idx]
         for row in range(pat.n_rows):
             for channel in range(pat.n_channels):
                 note = pat.data[channel][row]
                 vol_cmd, vol_val, volume = _normalize_volume_fields(note)
+                instrument_idx = getattr(note, "instrument_idx", 0)
+                if mod_effective is not None:
+                    instrument_idx = mod_effective[(seq_idx, row, channel)]
                 yield {
                     "sequence_idx": seq_idx,
                     "pattern_idx": pat_idx,
                     "row": row,
                     "channel": channel,
-                    "instrument_idx": getattr(note, "instrument_idx", 0),
+                    "instrument_idx": instrument_idx,
                     "period": getattr(note, "period", ""),
                     "effect": getattr(note, "effect", ""),
                     "vol_cmd": vol_cmd,
@@ -120,6 +184,9 @@ def _first_use(values: list[int]) -> list[int]:
 
 def _manual_note_indices_from_scope(song, scope: str) -> list[int]:
     assert_true(scope in {"sequence", "reachable"}, f"Invalid scope {scope}")
+    if isinstance(song, MODSong):
+        return _manual_mod_used_sample_indices(song, scope)
+
     values: list[int] = []
     if scope == "sequence":
         for _, pat_idx in _iter_pattern_entries(song, sequence_only=True):

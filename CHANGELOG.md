@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- MOD read APIs now expose effective sample-memory semantics by default (`get_note`, `iter_cells`, `iter_rows`, `get_used_samples`): note rows with raw sample `00` inherit the last latched sample on that channel.
+- Added explicit raw MOD note access via `get_note_raw(...)`, plus `resolved` flags on MOD traversal/resource helpers where applicable.
+
+### Performance
+
+- MOD effective-sample resolution now uses mutation-versioned lazy caches: rebuild on first read after mutation, then O(1) lookups until the next mutation.
+
 ## [1.0.1] - 2026-04-04
 
 ### API Stability
