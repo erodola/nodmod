@@ -2,9 +2,7 @@
 
 import array
 import copy
-import shutil
 import warnings
-import struct
 import pydub  # needed for loading WAV samples
 
 from nodmod import Song

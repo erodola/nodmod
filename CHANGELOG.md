@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 
 - Added explicit MOD tests for sample-only latch semantics (sample-without-note updates channel memory; latch survives empty rows and pattern boundaries).
 - Added dedicated tests for loop metadata validation/sanitization and strict save-time loop validation.
+- Added Ruff lint configuration and CI lint workflow.
 
 ## [1.0.1] - 2026-04-04
 

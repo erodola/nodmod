@@ -6,7 +6,6 @@ from nodmod import Sample
 from nodmod import Pattern
 from nodmod import Note
 import array
-import os
 import pydub  # needed for loading WAV samples
 import copy
 import struct

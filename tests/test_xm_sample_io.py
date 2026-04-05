@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import wave
-import array
 import tempfile
 from pathlib import Path
 
