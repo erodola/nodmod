@@ -13,6 +13,10 @@ All notable changes to this project will be documented in this file.
 
 - MOD effective-sample resolution now uses mutation-versioned lazy caches: rebuild on first read after mutation, then O(1) lookups until the next mutation.
 
+### Testing
+
+- Added explicit MOD tests for sample-only latch semantics (sample-without-note updates channel memory; latch survives empty rows and pattern boundaries).
+
 ## [1.0.1] - 2026-04-04
 
 ### API Stability

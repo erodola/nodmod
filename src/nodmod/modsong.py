@@ -1663,6 +1663,8 @@ class MODSong(Song):
         - if period is present and raw sample is `00`, the most recently latched
           sample for that channel is returned
         - if no sample was ever latched on that channel, effective sample is `0`
+        - sample-only rows (raw sample > 0 with empty period) update latch state
+          for later note rows in that same channel
         - sample memory carries across rows and pattern boundaries in sequence order
 
         Performance:
