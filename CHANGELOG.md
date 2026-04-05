@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - MOD read APIs now expose effective sample-memory semantics by default (`get_note`, `iter_cells`, `iter_rows`, `get_used_samples`): note rows with raw sample `00` inherit the last latched sample on that channel.
 - Added explicit raw MOD note access via `get_note_raw(...)`, plus `resolved` flags on MOD traversal/resource helpers where applicable.
+- `MODSong.load(...)` now reads `songname` from the MOD header by default; filename-derived metadata is now opt-in via `metadata_from_filename=True`.
 
 ### Performance
 

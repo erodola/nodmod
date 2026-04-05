@@ -231,19 +231,20 @@ class MODSong(Song):
     -------------------------------------
     '''
 
-    def load(self, fname: str, verbose: bool = True):
+    def load(self, fname: str, verbose: bool = True, *, metadata_from_filename: bool = False):
         """
         Loads a song from a standard MOD file.
 
         :param fname: The path to the module file.
         :param verbose: False for silent loading.
+        :param metadata_from_filename: When True, override metadata after load
+            using ``artist - title`` parsing from the file path. By default,
+            metadata is read from MOD file bytes.
         :return: None.
         """
 
         if verbose:
             print(f'Loading {fname}... ', end='', flush=True)
-
-        self.artist, self.songname = Song.artist_songname_from_filename(fname)
 
         with (open(fname, 'rb') as mod_file):
 
@@ -256,6 +257,9 @@ class MODSong(Song):
                     return raw.decode('utf-8')
                 except UnicodeDecodeError:
                     return raw.decode('latin-1')
+
+            self.artist = "Unknown Artist"
+            self.songname = _decode_header_bytes(bytes(data[:20])).rstrip('\x00')
 
             magic_string = _decode_header_bytes(data[1080:1080 + 4])
             accepted_magic = {"M.K.", "M!K!", "FLT4"}  # 4-channel variants
@@ -381,6 +385,9 @@ class MODSong(Song):
                         pat.data[c][r] = note
 
                 self.patterns.append(pat)
+
+        if metadata_from_filename:
+            self.artist, self.songname = Song.artist_songname_from_filename(fname)
 
         self._on_mutation()
         if verbose:
