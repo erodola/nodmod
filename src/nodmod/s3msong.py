@@ -537,8 +537,7 @@ class S3MSong(Song):
                     elif effect.startswith('SE') and len(effect) == 3:
                         row_delay = max(row_delay, int(effect[2], 16))
 
-                pat_rows.append((elapsed, self.initial_speed, self.initial_tempo))
-                pat_rows[-1] = (elapsed, speed, bpm)
+                pat_rows.append((elapsed, speed, bpm))
                 elapsed += (1 + row_delay) * self.get_tick_duration(bpm) * speed
 
                 if pending_jump_seq is not None or pending_break_row is not None:
