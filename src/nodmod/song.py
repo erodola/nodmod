@@ -415,8 +415,7 @@ class Song(ABC):
     def artist_songname_from_filename(filename: str):
         """Split a filename of the form 'artist - title.ext' into metadata fields."""
         filename = os.path.basename(filename)
-        parts = filename.split(' - ')
-        assert len(parts) <= 2
+        parts = filename.split(' - ', maxsplit=1)
         if len(parts) == 1:
             artist_name = "Unknown Artist"
             song_name = parts[0].strip()
@@ -511,10 +510,14 @@ class Song(ABC):
     @abstractmethod
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
-        Annotates the time of each row in the song, taking into account the speed and bpm changes.
+        Annotate playback timing per row as ``(seconds, speed, bpm)`` tuples.
 
-        :return: A list where each element is a list corresponding to pattern in the sequence.
-                 Within each list, each row is a triple (timestamp [s], speed, bpm).
+        The outer list contains playback-group entries produced by the concrete
+        format implementation. Current behavior is intentionally format-
+        specific: MOD and XM return cumulative row-end timestamps, while S3M
+        currently reports row-start timestamps.
+
+        :return: A nested list of per-row timing tuples for the concrete format.
         """
         pass
 
@@ -525,7 +528,12 @@ class Song(ABC):
         exact: bool = True,  # noqa: ARG002
         max_steps: int = 250_000,  # noqa: ARG002
     ):
-        """Yield playback-order rows with timing metadata when supported by a concrete format."""
+        """Yield playback-order rows with timing metadata when supported.
+
+        ``profile`` and ``exact`` are reserved forward-compatible parameters.
+        Current implementations accept them to keep the playback API stable,
+        but they are no-op placeholders in this codebase today.
+        """
         raise NotImplementedError("iter_playback_rows() is not implemented for this song format.")
 
     def get_song_duration(self) -> float:

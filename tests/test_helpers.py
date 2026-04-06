@@ -2,7 +2,7 @@ import array
 import os
 import random
 import wave
-from typing import List, Tuple
+from typing import List
 from nodmod import MODSong, S3MSong, XMSong
 from nodmod.types import S3MNote, S3MSample
 
@@ -58,13 +58,6 @@ def with_temp_wav(path: str, sample_width: int = 1) -> None:
         wf.writeframes(data)
 
 
-def _slice_signature(values: array.array, count: int = 8) -> Tuple[int, List[int], List[int]]:
-    n = len(values)
-    head = list(values[:count]) if n else []
-    tail = list(values[-count:]) if n else []
-    return n, head, tail
-
-
 def compare_mod_songs(a: MODSong, b: MODSong) -> None:
     assert_true(a.pattern_seq == b.pattern_seq, "MOD pattern_seq mismatch")
 
@@ -85,7 +78,7 @@ def compare_mod_songs(a: MODSong, b: MODSong) -> None:
                 assert_true(na.period == nb.period, "MOD note period mismatch")
                 assert_true(na.effect == nb.effect, "MOD note effect mismatch")
 
-    # Samples: compare metadata + waveform signatures
+    # Samples: compare metadata + full waveform content
     for i in range(31):
         sa = a.samples[i]
         sb = b.samples[i]
@@ -93,7 +86,7 @@ def compare_mod_songs(a: MODSong, b: MODSong) -> None:
         assert_true(sa.volume == sb.volume, "MOD sample volume mismatch")
         assert_true(sa.repeat_point == sb.repeat_point, "MOD sample repeat_point mismatch")
         assert_true(sa.repeat_len == sb.repeat_len, "MOD sample repeat_len mismatch")
-        assert_true(_slice_signature(sa.waveform) == _slice_signature(sb.waveform), "MOD sample waveform mismatch")
+        assert_true(sa.waveform == sb.waveform, "MOD sample waveform mismatch")
 
 
 def compare_xm_songs(a: XMSong, b: XMSong) -> None:
@@ -152,7 +145,7 @@ def compare_xm_songs(a: XMSong, b: XMSong) -> None:
             assert_true(sa.is_16bit == sb.is_16bit, "XM sample is_16bit mismatch")
             assert_true(sa.repeat_point == sb.repeat_point, "XM sample repeat_point mismatch")
             assert_true(sa.repeat_len == sb.repeat_len, "XM sample repeat_len mismatch")
-            assert_true(_slice_signature(sa.waveform) == _slice_signature(sb.waveform), "XM sample waveform mismatch")
+            assert_true(sa.waveform == sb.waveform, "XM sample waveform mismatch")
 
 
 def compare_s3m_songs(a: S3MSong, b: S3MSong) -> None:
@@ -197,7 +190,7 @@ def compare_s3m_songs(a: S3MSong, b: S3MSong) -> None:
         assert_true(sa.c2spd == sb.c2spd, "S3M sample c2spd mismatch")
         assert_true(sa.repeat_point == sb.repeat_point, "S3M sample repeat_point mismatch")
         assert_true(sa.repeat_len == sb.repeat_len, "S3M sample repeat_len mismatch")
-        assert_true(_slice_signature(sa.waveform) == _slice_signature(sb.waveform), "S3M sample waveform mismatch")
+        assert_true(sa.waveform == sb.waveform, "S3M sample waveform mismatch")
 
 
 if __name__ == "__main__":

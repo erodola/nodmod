@@ -18,9 +18,8 @@ class MODSong(Song):
     ROWS = 64
     CHANNELS = 4
     SAMPLES = 31
-    PATTERN_SIZE = ROWS * CHANNELS * 4
-    PAL_CLOCK = 7093789.2  # Hz
-    NTSC_SR = 8287  # Hz (reference pitch C-5)
+    PAL_CLOCK = 7093789.2  # Hz, classic Amiga PAL clock used by ProTracker-style MOD timing and period math.
+    NTSC_SR = 8287  # Hz, reference C-5 playback rate from the standard MOD period table.
 
     # OpenMPT period table for Tuning 0, Normal
     PERIOD_TABLE = {
@@ -41,6 +40,11 @@ class MODSong(Song):
     }
 
     INV_PERIOD_TABLE = {value: key for key, value in PERIOD_TABLE.items()}
+
+    @property
+    def n_channels(self) -> int:
+        """MOD songs always expose four channels, even if the pattern pool is empty."""
+        return self.CHANNELS
 
     @property
     def file_extension(self) -> str:
@@ -83,7 +87,13 @@ class MODSong(Song):
 
     @staticmethod
     def _resolve_effective_sample(raw_sample: int, period: str, latched_sample: int) -> tuple[int, int]:
-        """Resolve one MOD cell's effective sample using channel-local sample memory."""
+        """Resolve a MOD cell's effective sample under channel-local sample memory.
+
+        MOD cells can omit the raw sample nibble while still specifying a note
+        period. In that case playback reuses the most recently latched sample in
+        the same channel. The returned tuple contains both the effective sample
+        for the current cell and the updated latched sample for the next cell.
+        """
         if raw_sample > 0:
             latched_sample = raw_sample
         if period != '':
@@ -392,21 +402,6 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_ascii(self, fname: str, verbose: bool = True):
-        """
-        Writes the song as readable text with ASCII encoding.
-
-        :param fname: Complete file path.
-        :param verbose: False for silent saving.
-        :return: None.
-        """
-        if verbose:
-            print(f'Saving to {fname}... ', end='', flush=True)
-        with open(fname, 'w', encoding='ascii') as file:
-            file.write(self.to_ascii())
-        if verbose:
-            print('done.')
-
     def save(self, fname: str, verbose: bool = True, *, validate_samples: bool = False):
         """
         Saves the song as a standard MOD file.
@@ -565,7 +560,11 @@ class MODSong(Song):
         exact: bool = True,  # noqa: ARG002
         max_steps: int = 250_000,
     ):
-        """Yield visited MOD rows with source coordinates and timing metadata."""
+        """Yield visited MOD rows with source coordinates and timing metadata.
+
+        ``profile`` and ``exact`` are reserved compatibility parameters and
+        are currently accepted as explicit no-ops.
+        """
         if max_steps <= 0:
             raise ValueError(f"Invalid max_steps {max_steps} (expected > 0).")
 
@@ -712,12 +711,14 @@ class MODSong(Song):
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
-        Computes the timestamp of each row in the song.
-        Takes into account speed / bpm changes, pattern breaks, and position jumps.
+        Compute MOD row-end timestamps, speeds, and BPM values.
 
+        Each tuple stores the cumulative end time after the row has finished
+        playing. This matches XM and differs from S3M, whose timestamp tuples
+        currently record row-start times.
 
-        :return: A list where each element is a list corresponding to pattern in the sequence.
-                 Within each list, each row is a triple (timestamp [s], speed, bpm).
+        :return: A list of visited sequence entries, each containing
+                 ``(end_time_seconds, speed, bpm)`` tuples.
         """
 
         # default timing for MOD files, if nothing is specified
@@ -784,6 +785,7 @@ class MODSong(Song):
 
                         elif efx[0] == "D":  # jump to a specific row in the next pattern
                             if len(efx) >= 3:
+                                # MOD Dxx stores the destination row in decimal BCD, not plain hexadecimal.
                                 hi = int(efx[1], 16)
                                 lo = int(efx[2], 16)
                                 if len(self.pattern_seq) > 1:

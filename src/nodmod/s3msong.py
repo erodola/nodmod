@@ -390,7 +390,11 @@ class S3MSong(Song):
         exact: bool = True,  # noqa: ARG002
         max_steps: int = 250_000,
     ):
-        """Yield visited S3M rows with source coordinates and timing metadata."""
+        """Yield visited S3M rows with source coordinates and timing metadata.
+
+        ``profile`` and ``exact`` are reserved compatibility parameters and
+        are currently accepted as explicit no-ops.
+        """
         if max_steps <= 0:
             raise ValueError(f"Invalid max_steps {max_steps} (expected > 0).")
 
@@ -537,8 +541,7 @@ class S3MSong(Song):
                     elif effect.startswith('SE') and len(effect) == 3:
                         row_delay = max(row_delay, int(effect[2], 16))
 
-                pat_rows.append((elapsed, self.initial_speed, self.initial_tempo))
-                pat_rows[-1] = (elapsed, speed, bpm)
+                pat_rows.append((elapsed, speed, bpm))
                 elapsed += (1 + row_delay) * self.get_tick_duration(bpm) * speed
 
                 if pending_jump_seq is not None or pending_break_row is not None:

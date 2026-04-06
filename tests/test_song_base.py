@@ -10,6 +10,8 @@ def test_song_base() -> None:
     assert_true(abs(MODSong.get_tick_duration(125) - 0.02) < 1e-6, "Tick duration mismatch")
     artist, name = MODSong.artist_songname_from_filename("Artist - Track.mod")
     assert_true(artist == "Artist" and name == "Track", "artist_songname_from_filename mismatch")
+    artist, name = MODSong.artist_songname_from_filename("a - b - c.mod")
+    assert_true(artist == "a" and name == "b - c", "artist_songname_from_filename should split once")
 
     mod = MODSong()
     mod.set_note(0, 0, 0, 1, "C-4")

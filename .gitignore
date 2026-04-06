@@ -5,6 +5,7 @@ uv.lock
 .python-version
 *.bak
 .claude/
+plans/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

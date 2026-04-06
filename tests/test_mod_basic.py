@@ -6,10 +6,10 @@ from .test_helpers import assert_true, assert_raises, assert_raises_msg
 
 
 def test_mod_note_helpers() -> None:
-    note_raw = bytearray([0x10, 0x00, 0x20, 0x00])
-    _ = MODSong.get_sample_from_note(note_raw)
-    _ = MODSong.get_period_from_note(note_raw)
-    _ = MODSong.get_effect_from_note(note_raw)
+    note_raw = bytearray([0x13, 0x58, 0x2B, 0x01])
+    assert_true(MODSong.get_sample_from_note(note_raw) == 18, "get_sample_from_note decoded wrong sample")
+    assert_true(MODSong.get_period_from_note(note_raw) == "C-4", "get_period_from_note decoded wrong period")
+    assert_true(MODSong.get_effect_from_note(note_raw) == (0x0B, 0x01), "get_effect_from_note decoded wrong effect")
 
 
 def test_mod_basic_ops() -> None:
@@ -60,6 +60,16 @@ def test_mod_row_count_and_duration() -> None:
     assert_true(n_rows >= 64, "get_effective_row_count should be >= original rows")
 
 
+def test_mod_n_channels_property() -> None:
+    song = MODSong()
+    assert_true(song.n_channels == 4, "MODSong.n_channels should stay fixed at 4")
+
+    song.remove_all_patterns(sequence_only=False)
+    assert_true(song.n_channels == 4, "MODSong.n_channels should stay fixed at 4 with no patterns")
+    assert_true(song.view().n_channels == 4, "Song.view should report 4 MOD channels with no patterns")
+    assert_true("channels=4" in repr(song), "MOD repr should report 4 channels with no patterns")
+
+
 def test_mod_effect_setters() -> None:
     song = MODSong()
 
@@ -101,6 +111,27 @@ def test_mod_misc(tmp_dir: str) -> None:
 
     clone = song.copy()
     assert_true(isinstance(clone, MODSong), "copy should return MODSong")
+
+
+def test_mod_save_excludes_unreferenced_patterns(tmp_dir: str) -> None:
+    song = MODSong()
+    song.set_note(0, 0, 0, 1, "C-4", "")
+    song.add_pattern()
+    song.add_pattern()
+    song.patterns[2].data[0][0] = song.patterns[2].data[0][0].__class__(2, "D-4", "B01")
+    song.set_sequence([0])
+
+    assert_true(len(song.patterns) == 3, "test setup should keep unreferenced patterns in the pool")
+
+    mod_path = os.path.join(tmp_dir, "mod_unreferenced_patterns.mod")
+    song.save(mod_path, verbose=False)
+
+    loaded = MODSong()
+    loaded.load(mod_path, verbose=False)
+
+    assert_true(loaded.pattern_seq == [0], "reloaded MOD sequence should keep only referenced patterns")
+    assert_true(len(loaded.patterns) == 1, "reloaded MOD should exclude unreferenced patterns")
+    assert_true(loaded.get_note(0, 0, 0).period == "C-4", "reloaded referenced pattern should be preserved")
 
 
 def test_mod_edge_cases() -> None:
@@ -221,8 +252,10 @@ if __name__ == "__main__":
     test_mod_note_helpers()
     test_mod_basic_ops()
     test_mod_row_count_and_duration()
+    test_mod_n_channels_property()
     test_mod_effect_setters()
     test_mod_misc(tmp_dir)
+    test_mod_save_excludes_unreferenced_patterns(tmp_dir)
     test_mod_edge_cases()
     test_mod_multi_channel_patterns()
     test_mod_random_edit_stress()

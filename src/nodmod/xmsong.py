@@ -224,17 +224,8 @@ class XMSong(Song):
             if vol_cmd == '':
                 return 0
             if vol_cmd == 'v':
-                # Set volume: 0x10-0x50 for values 0-64
-                if vol_val <= 15:
-                    return 0x10 + vol_val
-                elif vol_val <= 31:
-                    return 0x20 + (vol_val - 16)
-                elif vol_val <= 47:
-                    return 0x30 + (vol_val - 32)
-                elif vol_val <= 63:
-                    return 0x40 + (vol_val - 48)
-                else:  # 64
-                    return 0x50
+                # XM set-volume bytes are a contiguous 0x10-0x50 range for values 0-64.
+                return 0x10 + max(0, min(vol_val, 64))
             elif vol_cmd == 'd':  # volume slide down
                 return 0x60 + vol_val
             elif vol_cmd == 'c':  # volume slide up
@@ -332,7 +323,7 @@ class XMSong(Song):
         data += len(self.patterns).to_bytes(2, byteorder='little')
         
         # Number of instruments (2 bytes)
-        data += self.n_instruments.to_bytes(2, byteorder='little')
+        data += len(self.instruments).to_bytes(2, byteorder='little')
         
         # Flags (2 bytes)
         data += self.flags.to_bytes(2, byteorder='little')
@@ -705,6 +696,10 @@ class XMSong(Song):
                 volume_val = 0
                 cmd_nibble = volume_byte & 0xF0
                 val_nibble = volume_byte & 0x0F
+
+                # FastTracker 2 leaves 0x01-0x0F and 0x51-0x5F undefined in the
+                # volume column, so non-standard bytes are treated as "no volume
+                # data" rather than assigned guessed semantics.
 
                 if volume_byte == 0:
                     pass  # Empty volume column, keep defaults
@@ -1210,7 +1205,11 @@ class XMSong(Song):
         exact: bool = True,  # noqa: ARG002
         max_steps: int = 250_000,
     ):
-        """Yield visited XM rows with source coordinates and timing metadata."""
+        """Yield visited XM rows with source coordinates and timing metadata.
+
+        ``profile`` and ``exact`` are reserved compatibility parameters and
+        are currently accepted as explicit no-ops.
+        """
         if max_steps <= 0:
             raise ValueError(f"Invalid max_steps {max_steps} (expected > 0).")
 
@@ -1388,10 +1387,14 @@ class XMSong(Song):
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
-        Annotates the time of each row in the song, taking into account the speed and bpm changes.
+        Compute XM row-end timestamps, speeds, and BPM values.
 
-        :return: A list where each element is a list corresponding to pattern in the sequence.
-                 Within each list, each row is a triple (timestamp [s], speed, bpm).
+        Each tuple stores the cumulative end time after the row has finished
+        playing. This matches MOD and differs from S3M, whose timestamp tuples
+        currently record row-start times.
+
+        :return: A list of visited sequence entries, each containing
+                 ``(end_time_seconds, speed, bpm)`` tuples.
         """
 
         bpm = self.default_tempo
@@ -2548,4 +2551,4 @@ class XMSong(Song):
         :param pattern: The pattern index (within the song sequence).
         :return: The pattern duration in seconds.
         """
-        pass  # TODO
+        raise NotImplementedError("XMSong.get_pattern_duration() is not implemented.")
