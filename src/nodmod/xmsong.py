@@ -2548,4 +2548,4 @@ class XMSong(Song):
         :param pattern: The pattern index (within the song sequence).
         :return: The pattern duration in seconds.
         """
-        pass  # TODO
+        raise NotImplementedError("XMSong.get_pattern_duration() is not implemented.")

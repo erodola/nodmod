@@ -134,6 +134,10 @@ def test_xm_misc(tmp_dir: str) -> None:
     assert_true(isinstance(clone, XMSong), "copy should return XMSong")
 
 
+def test_xm_pattern_duration_not_implemented() -> None:
+    assert_raises(NotImplementedError, XMSong().get_pattern_duration, 0)
+
+
 
 def test_xm_channel_ops() -> None:
     song = XMSong()
@@ -220,6 +224,7 @@ if __name__ == "__main__":
     test_xm_instrument_map_stress()
     test_pattern_sequence_stress()
     test_xm_misc(tmp_dir)
+    test_xm_pattern_duration_not_implemented()
     test_xm_channel_ops()
     test_xm_mute_channel_global_effects()
     test_xm_pattern_ops()
