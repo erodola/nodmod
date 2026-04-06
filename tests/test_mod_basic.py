@@ -60,6 +60,16 @@ def test_mod_row_count_and_duration() -> None:
     assert_true(n_rows >= 64, "get_effective_row_count should be >= original rows")
 
 
+def test_mod_n_channels_property() -> None:
+    song = MODSong()
+    assert_true(song.n_channels == 4, "MODSong.n_channels should stay fixed at 4")
+
+    song.remove_all_patterns(sequence_only=False)
+    assert_true(song.n_channels == 4, "MODSong.n_channels should stay fixed at 4 with no patterns")
+    assert_true(song.view().n_channels == 4, "Song.view should report 4 MOD channels with no patterns")
+    assert_true("channels=4" in repr(song), "MOD repr should report 4 channels with no patterns")
+
+
 def test_mod_effect_setters() -> None:
     song = MODSong()
 
@@ -242,6 +252,7 @@ if __name__ == "__main__":
     test_mod_note_helpers()
     test_mod_basic_ops()
     test_mod_row_count_and_duration()
+    test_mod_n_channels_property()
     test_mod_effect_setters()
     test_mod_misc(tmp_dir)
     test_mod_save_excludes_unreferenced_patterns(tmp_dir)

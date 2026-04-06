@@ -42,6 +42,11 @@ class MODSong(Song):
     INV_PERIOD_TABLE = {value: key for key, value in PERIOD_TABLE.items()}
 
     @property
+    def n_channels(self) -> int:
+        """MOD songs always expose four channels, even if the pattern pool is empty."""
+        return self.CHANNELS
+
+    @property
     def file_extension(self) -> str:
         """File extension used when saving MOD songs."""
         return 'mod'
