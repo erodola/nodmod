@@ -1210,7 +1210,11 @@ class XMSong(Song):
         exact: bool = True,  # noqa: ARG002
         max_steps: int = 250_000,
     ):
-        """Yield visited XM rows with source coordinates and timing metadata."""
+        """Yield visited XM rows with source coordinates and timing metadata.
+
+        ``profile`` and ``exact`` are reserved compatibility parameters and
+        are currently accepted as explicit no-ops.
+        """
         if max_steps <= 0:
             raise ValueError(f"Invalid max_steps {max_steps} (expected > 0).")
 

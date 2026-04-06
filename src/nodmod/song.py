@@ -524,7 +524,12 @@ class Song(ABC):
         exact: bool = True,  # noqa: ARG002
         max_steps: int = 250_000,  # noqa: ARG002
     ):
-        """Yield playback-order rows with timing metadata when supported by a concrete format."""
+        """Yield playback-order rows with timing metadata when supported.
+
+        ``profile`` and ``exact`` are reserved forward-compatible parameters.
+        Current implementations accept them to keep the playback API stable,
+        but they are no-op placeholders in this codebase today.
+        """
         raise NotImplementedError("iter_playback_rows() is not implemented for this song format.")
 
     def get_song_duration(self) -> float:
