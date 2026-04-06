@@ -18,7 +18,6 @@ class MODSong(Song):
     ROWS = 64
     CHANNELS = 4
     SAMPLES = 31
-    PATTERN_SIZE = ROWS * CHANNELS * 4
     PAL_CLOCK = 7093789.2  # Hz
     NTSC_SR = 8287  # Hz (reference pitch C-5)
 
