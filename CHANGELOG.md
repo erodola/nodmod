@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-04-06
+
+### API Stability
+
+All public APIs in this release are considered stable.
+
+### Added
+
+- Added MOD regression coverage for fixed four-channel reporting, unreferenced-pattern save behavior, and decoded note helper values.
+- Added XM regressions for explicit `get_pattern_duration(...)` failure mode and header instrument-count serialization from live instruments.
+- Added filename parsing coverage for multi-dash names (`artist - song - extra.ext`) to preserve full song titles.
+
+### Changed
+
+- MOD channel reporting is now invariant at four channels (`MODSong.n_channels`) even when no patterns are present.
+- XM set-volume byte encoding now uses a contiguous, clamped `0x10..0x50` mapping for values `0..64`.
+- XM save now serializes instrument count from the live `instruments` list.
+- MOD now relies on the shared base-class ASCII save path (`Song.save_ascii(...)`) instead of a duplicated override.
+- Repository ignore rules now include local `plans/` workspace artifacts.
+
+### Fixed
+
+- `artist_songname_from_filename(...)` now splits on the first separator only, preserving titles containing additional ` - ` substrings.
+- S3M timestamp tuples now preserve effective row speed/BPM values by removing a dead overwrite.
+- `XMSong.get_pattern_duration(...)` now raises `NotImplementedError` explicitly instead of returning `None`.
+
+### Testing
+
+- Sample waveform comparisons in MOD/XM/S3M round-trip helpers now assert full waveform equality rather than head/tail signatures.
+
+### Documentation
+
+- Clarified timing API semantics across Song/MOD/XM/S3M (`timestamp` and `iter_playback_rows`), including current format-specific behavior and reserved playback parameters.
+- Added inline MOD timing/effect notes for PAL/NTSC constants and Dxx decimal-BCD row-break decoding.
+
 ## [1.0.2] - 2026-04-05
 
 ### API Stability
