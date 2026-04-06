@@ -6,10 +6,10 @@ from .test_helpers import assert_true, assert_raises, assert_raises_msg
 
 
 def test_mod_note_helpers() -> None:
-    note_raw = bytearray([0x10, 0x00, 0x20, 0x00])
-    _ = MODSong.get_sample_from_note(note_raw)
-    _ = MODSong.get_period_from_note(note_raw)
-    _ = MODSong.get_effect_from_note(note_raw)
+    note_raw = bytearray([0x13, 0x58, 0x2B, 0x01])
+    assert_true(MODSong.get_sample_from_note(note_raw) == 18, "get_sample_from_note decoded wrong sample")
+    assert_true(MODSong.get_period_from_note(note_raw) == "C-4", "get_period_from_note decoded wrong period")
+    assert_true(MODSong.get_effect_from_note(note_raw) == (0x0B, 0x01), "get_effect_from_note decoded wrong effect")
 
 
 def test_mod_basic_ops() -> None:
