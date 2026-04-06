@@ -224,17 +224,8 @@ class XMSong(Song):
             if vol_cmd == '':
                 return 0
             if vol_cmd == 'v':
-                # Set volume: 0x10-0x50 for values 0-64
-                if vol_val <= 15:
-                    return 0x10 + vol_val
-                elif vol_val <= 31:
-                    return 0x20 + (vol_val - 16)
-                elif vol_val <= 47:
-                    return 0x30 + (vol_val - 32)
-                elif vol_val <= 63:
-                    return 0x40 + (vol_val - 48)
-                else:  # 64
-                    return 0x50
+                # XM set-volume bytes are a contiguous 0x10-0x50 range for values 0-64.
+                return 0x10 + max(0, min(vol_val, 64))
             elif vol_cmd == 'd':  # volume slide down
                 return 0x60 + vol_val
             elif vol_cmd == 'c':  # volume slide up
