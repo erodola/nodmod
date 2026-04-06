@@ -103,6 +103,27 @@ def test_mod_misc(tmp_dir: str) -> None:
     assert_true(isinstance(clone, MODSong), "copy should return MODSong")
 
 
+def test_mod_save_excludes_unreferenced_patterns(tmp_dir: str) -> None:
+    song = MODSong()
+    song.set_note(0, 0, 0, 1, "C-4", "")
+    song.add_pattern()
+    song.add_pattern()
+    song.patterns[2].data[0][0] = song.patterns[2].data[0][0].__class__(2, "D-4", "B01")
+    song.set_sequence([0])
+
+    assert_true(len(song.patterns) == 3, "test setup should keep unreferenced patterns in the pool")
+
+    mod_path = os.path.join(tmp_dir, "mod_unreferenced_patterns.mod")
+    song.save(mod_path, verbose=False)
+
+    loaded = MODSong()
+    loaded.load(mod_path, verbose=False)
+
+    assert_true(loaded.pattern_seq == [0], "reloaded MOD sequence should keep only referenced patterns")
+    assert_true(len(loaded.patterns) == 1, "reloaded MOD should exclude unreferenced patterns")
+    assert_true(loaded.get_note(0, 0, 0).period == "C-4", "reloaded referenced pattern should be preserved")
+
+
 def test_mod_edge_cases() -> None:
     song = MODSong()
 
@@ -223,6 +244,7 @@ if __name__ == "__main__":
     test_mod_row_count_and_duration()
     test_mod_effect_setters()
     test_mod_misc(tmp_dir)
+    test_mod_save_excludes_unreferenced_patterns(tmp_dir)
     test_mod_edge_cases()
     test_mod_multi_channel_patterns()
     test_mod_random_edit_stress()
