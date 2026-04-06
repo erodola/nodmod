@@ -1,4 +1,3 @@
-import array
 import os
 import random
 import wave
