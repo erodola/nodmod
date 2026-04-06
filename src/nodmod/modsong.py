@@ -392,21 +392,6 @@ class MODSong(Song):
         if verbose:
             print('done.')
 
-    def save_ascii(self, fname: str, verbose: bool = True):
-        """
-        Writes the song as readable text with ASCII encoding.
-
-        :param fname: Complete file path.
-        :param verbose: False for silent saving.
-        :return: None.
-        """
-        if verbose:
-            print(f'Saving to {fname}... ', end='', flush=True)
-        with open(fname, 'w', encoding='ascii') as file:
-            file.write(self.to_ascii())
-        if verbose:
-            print('done.')
-
     def save(self, fname: str, verbose: bool = True, *, validate_samples: bool = False):
         """
         Saves the song as a standard MOD file.
