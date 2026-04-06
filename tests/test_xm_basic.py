@@ -2,7 +2,7 @@ import array
 import os
 import random
 from nodmod import MODSong, XMSong
-from nodmod.types import XMNote, XMSample
+from nodmod.types import Instrument, XMNote, XMSample
 from .test_helpers import assert_true, assert_raises, assert_raises_msg
 
 
@@ -138,6 +138,27 @@ def test_xm_pattern_duration_not_implemented() -> None:
     assert_raises(NotImplementedError, XMSong().get_pattern_duration, 0)
 
 
+def test_xm_save_uses_live_instrument_count(tmp_dir: str) -> None:
+    song = XMSong()
+    song.n_channels = 1
+    song.add_pattern(4)
+    song.new_instrument("Inst 1")
+
+    stale_instrument = Instrument()
+    stale_instrument.name = "Inst 2"
+    song.instruments.append(stale_instrument)
+    assert_true(len(song.instruments) != song.n_instruments, "test setup should create stale XM instrument count")
+
+    xm_path = os.path.join(tmp_dir, "xm_instrument_count.xm")
+    song.save(xm_path, verbose=False)
+
+    with open(xm_path, "rb") as handle:
+        data = handle.read(74)
+
+    instrument_count = int.from_bytes(data[72:74], byteorder="little", signed=False)
+    assert_true(instrument_count == len(song.instruments), "XM header instrument count should match live list length")
+
+
 
 def test_xm_channel_ops() -> None:
     song = XMSong()
@@ -225,6 +246,7 @@ if __name__ == "__main__":
     test_pattern_sequence_stress()
     test_xm_misc(tmp_dir)
     test_xm_pattern_duration_not_implemented()
+    test_xm_save_uses_live_instrument_count(tmp_dir)
     test_xm_channel_ops()
     test_xm_mute_channel_global_effects()
     test_xm_pattern_ops()

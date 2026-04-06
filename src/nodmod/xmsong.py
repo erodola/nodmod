@@ -332,7 +332,7 @@ class XMSong(Song):
         data += len(self.patterns).to_bytes(2, byteorder='little')
         
         # Number of instruments (2 bytes)
-        data += self.n_instruments.to_bytes(2, byteorder='little')
+        data += len(self.instruments).to_bytes(2, byteorder='little')
         
         # Flags (2 bytes)
         data += self.flags.to_bytes(2, byteorder='little')
