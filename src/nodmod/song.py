@@ -415,8 +415,7 @@ class Song(ABC):
     def artist_songname_from_filename(filename: str):
         """Split a filename of the form 'artist - title.ext' into metadata fields."""
         filename = os.path.basename(filename)
-        parts = filename.split(' - ')
-        assert len(parts) <= 2
+        parts = filename.split(' - ', maxsplit=1)
         if len(parts) == 1:
             artist_name = "Unknown Artist"
             song_name = parts[0].strip()
