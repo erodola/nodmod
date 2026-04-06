@@ -706,6 +706,10 @@ class XMSong(Song):
                 cmd_nibble = volume_byte & 0xF0
                 val_nibble = volume_byte & 0x0F
 
+                # FastTracker 2 leaves 0x01-0x0F and 0x51-0x5F undefined in the
+                # volume column, so non-standard bytes are treated as "no volume
+                # data" rather than assigned guessed semantics.
+
                 if volume_byte == 0:
                     pass  # Empty volume column, keep defaults
                 elif volume_byte < 0x10:
@@ -1392,10 +1396,14 @@ class XMSong(Song):
 
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
-        Annotates the time of each row in the song, taking into account the speed and bpm changes.
+        Compute XM row-end timestamps, speeds, and BPM values.
 
-        :return: A list where each element is a list corresponding to pattern in the sequence.
-                 Within each list, each row is a triple (timestamp [s], speed, bpm).
+        Each tuple stores the cumulative end time after the row has finished
+        playing. This matches MOD and differs from S3M, whose timestamp tuples
+        currently record row-start times.
+
+        :return: A list of visited sequence entries, each containing
+                 ``(end_time_seconds, speed, bpm)`` tuples.
         """
 
         bpm = self.default_tempo

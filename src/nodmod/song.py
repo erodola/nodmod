@@ -510,10 +510,14 @@ class Song(ABC):
     @abstractmethod
     def timestamp(self) -> list[list[tuple[float, int, int]]]:
         """
-        Annotates the time of each row in the song, taking into account the speed and bpm changes.
+        Annotate playback timing per row as ``(seconds, speed, bpm)`` tuples.
 
-        :return: A list where each element is a list corresponding to pattern in the sequence.
-                 Within each list, each row is a triple (timestamp [s], speed, bpm).
+        The outer list contains playback-group entries produced by the concrete
+        format implementation. Current behavior is intentionally format-
+        specific: MOD and XM return cumulative row-end timestamps, while S3M
+        currently reports row-start timestamps.
+
+        :return: A nested list of per-row timing tuples for the concrete format.
         """
         pass
 
