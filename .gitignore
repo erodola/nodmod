@@ -1,11 +1,13 @@
-docs/
-dev/
-playground/
-uv.lock
-.python-version
+/dev/
+/playground/
+/.python-version
 *.bak
-.claude/
-plans/
+/.claude/
+/plans/
+/docs/*.txt
+/docs/*.pdf
+Thumbs.db
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -58,6 +60,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
 cover/
 
 # Translations
