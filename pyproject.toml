@@ -7,11 +7,11 @@ name = "nodmod"
 version = "1.0.3"
 description = "Read, edit, and write tracker modules (MOD, XM, S3M)."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Emanuele Rodolà", email = "e.rodola@gmail.com"}
 ]
-requires-python = "==3.11.*"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "pydub>=0.25.1",
 ]
