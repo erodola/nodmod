@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-04-08
+
+### Changed
+
+- Updated package/runtime metadata to `v1.0.4`.
+- Clarified current tested Python support as 3.11 and 3.12 in README.
+- Restricted package install metadata to Python `>=3.11,<3.13` to match current validated support.
+- Updated CI to test both Python 3.11 and 3.12.
+- Set the publish workflow to use a dedicated `pypi` GitHub Actions environment for Trusted Publishing.
+
 ## [1.0.3] - 2026-04-06
 
 ### API Stability

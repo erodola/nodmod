@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/erodola/nodmod/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/erodola/nodmod/actions/workflows/ci.yml?query=branch%3Amain)
 [![Ruff](https://github.com/erodola/nodmod/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/erodola/nodmod/actions/workflows/lint.yml?query=branch%3Amain)
-[![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases)
+[![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases/tag/v1.0.4)
 [![API Stability](https://img.shields.io/badge/API-stable-brightgreen)](https://github.com/erodola/nodmod/releases/tag/v1.0.4)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://github.com/erodola/nodmod/actions/workflows/ci.yml?query=branch%3Amain)
 [![License](https://img.shields.io/github/license/erodola/nodmod)](https://github.com/erodola/nodmod/blob/main/LICENSE)
