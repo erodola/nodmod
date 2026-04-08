@@ -3,10 +3,8 @@
 [![CI](https://github.com/erodola/nodmod/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/erodola/nodmod/actions/workflows/ci.yml?query=branch%3Amain)
 [![Ruff](https://github.com/erodola/nodmod/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/erodola/nodmod/actions/workflows/lint.yml?query=branch%3Amain)
 [![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases/tag/v1.0.4)
-[![PyPI version](https://img.shields.io/pypi/v/nodmod)](https://pypi.org/project/nodmod/)
 [![Python versions](https://img.shields.io/pypi/pyversions/nodmod)](https://pypi.org/project/nodmod/)
 [![PyPI downloads](https://img.shields.io/pypi/dm/nodmod)](https://pypi.org/project/nodmod/)
-[![Wheel](https://img.shields.io/pypi/wheel/nodmod)](https://pypi.org/project/nodmod/)
 [![License](https://img.shields.io/pypi/l/nodmod)](https://pypi.org/project/nodmod/)
 [![Last Commit](https://img.shields.io/github/last-commit/erodola/nodmod)](https://github.com/erodola/nodmod/commits/main)
 [![Formats](https://img.shields.io/badge/formats-MOD%20%7C%20XM%20%7C%20S3M-4c8bf5)](https://github.com/erodola/nodmod)
@@ -37,11 +35,16 @@ The project is built around direct programmatic editing. You load or create a so
 
 ## Installation
 
+From PyPI (recommended):
+
 ```bash
-git clone https://github.com/erodola/nodmod.git
-cd nodmod
-uv venv
-uv pip install -e .
+uv add nodmod
+```
+
+or:
+
+```bash
+pip install nodmod
 ```
 
 Verify with:
@@ -52,6 +55,15 @@ source .venv/bin/activate  # macOS/Linux
 .venv\Scripts\activate     # Windows
 
 python -c "import nodmod; print('nodmod installed successfully!')"
+```
+
+For development from source:
+
+```bash
+git clone https://github.com/erodola/nodmod.git
+cd nodmod
+uv venv
+uv pip install -e .
 ```
 
 ## Quick Start

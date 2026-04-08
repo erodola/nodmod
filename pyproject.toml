@@ -11,6 +11,11 @@ license = "MIT"
 authors = [
     {name = "Emanuele Rodolà", email = "e.rodola@gmail.com"}
 ]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "pydub>=0.25.1",
