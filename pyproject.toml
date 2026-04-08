@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nodmod"
-version = "1.0.3"
+version = "1.0.4"
 description = "Read, edit, and write tracker modules (MOD, XM, S3M)."
 readme = "README.md"
 license = "MIT"

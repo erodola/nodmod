@@ -10,4 +10,4 @@ from .modsong import *
 from .xmsong import *
 from .s3msong import *
 
-__version__ = '1.0.3'
+__version__ = '1.0.4'
