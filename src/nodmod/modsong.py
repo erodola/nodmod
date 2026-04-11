@@ -6,10 +6,24 @@ from nodmod import Sample
 from nodmod import Pattern
 from nodmod import Note
 import array
-import pydub  # needed for loading WAV samples
 import copy
 import struct
 from .views import CellView, PlaybackRowView, RowView
+
+
+def _require_pydub():
+    """Import pydub lazily so core module APIs stay usable without WAV extras."""
+    try:
+        import pydub
+    except ImportError as exc:
+        missing = getattr(exc, "name", "")
+        if missing in {"audioop", "pyaudioop"}:
+            raise ImportError(
+                "WAV sample I/O requires audioop compatibility on this Python. "
+                "Install `audioop-lts`."
+            ) from exc
+        raise ImportError("WAV sample I/O requires `pydub`.") from exc
+    return pydub
 
 
 class MODSong(Song):
@@ -909,6 +923,7 @@ class MODSong(Song):
 
         self.samples[sample_idx - 1] = Sample()  # reset all attributes
 
+        pydub = _require_pydub()
         audio = pydub.AudioSegment.from_wav(fname).set_channels(1)
         if audio.sample_width != 1:
             audio = audio.set_sample_width(1)
@@ -957,6 +972,7 @@ class MODSong(Song):
             # scale to signed int8 (-128..127)
             pcm_bytes.append(struct.pack('b', int(s * 127))[0])
 
+        pydub = _require_pydub()
         # create AudioSegment
         audio = pydub.AudioSegment(
             data=bytes(pcm_bytes),
@@ -1160,6 +1176,7 @@ class MODSong(Song):
             raise ValueError(f"Sample {sample_idx} has no waveform data")
         
         effective_sample_rate = self._get_effective_sample_rate(smp, period)
+        pydub = _require_pydub()
         
         audio = pydub.AudioSegment(
             data=smp.waveform.tobytes(),

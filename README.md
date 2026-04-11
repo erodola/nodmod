@@ -247,9 +247,9 @@ Scope semantics:
 
 ## Requirements
 
-- Python 3.10, 3.11, or 3.12
-- Python 3.13+ compatibility is tracked in [#30](https://github.com/erodola/nodmod/issues/30)
+- Python 3.10, 3.11, 3.12, 3.13, or 3.14
 - pydub 0.25.1+
+- `audioop-lts` is pulled automatically on Python 3.13+
 - Optional: `openmpt123` or `ffmpeg` for WAV rendering
 
 ## Project Status

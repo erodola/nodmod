@@ -3,7 +3,6 @@
 import array
 import copy
 import warnings
-import pydub  # needed for loading WAV samples
 
 from nodmod import Song
 from nodmod import XMSample
@@ -13,6 +12,21 @@ from nodmod import EnvelopePoint
 from nodmod import Pattern
 from nodmod import XMNote
 from .views import PlaybackRowView, SampleView
+
+
+def _require_pydub():
+    """Import pydub lazily so non-WAV XM APIs work without WAV extras."""
+    try:
+        import pydub
+    except ImportError as exc:
+        missing = getattr(exc, "name", "")
+        if missing in {"audioop", "pyaudioop"}:
+            raise ImportError(
+                "WAV sample I/O requires audioop compatibility on this Python. "
+                "Install `audioop-lts`."
+            ) from exc
+        raise ImportError("WAV sample I/O requires `pydub`.") from exc
+    return pydub
 
 
 class XMSong(Song):
@@ -2101,6 +2115,7 @@ class XMSong(Song):
         Returns the 1-based sample index.
         """
         inst = self.get_instrument(inst_idx)
+        pydub = _require_pydub()
         audio = pydub.AudioSegment.from_wav(fname).set_channels(1)
         sample = XMSample()
         sample.waveform = audio.get_array_of_samples()
@@ -2327,6 +2342,7 @@ class XMSong(Song):
             raise ValueError(f"Sample {sample_idx} has no waveform data")
 
         sample_width = 2 if smp.is_16bit else 1
+        pydub = _require_pydub()
         audio = pydub.AudioSegment(
             data=smp.waveform.tobytes(),
             sample_width=sample_width,
