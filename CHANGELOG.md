@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-04-11
+
+### API Stability
+
+All public APIs in this release are considered stable.
+
+### Added
+
+- Added Python compatibility guardrail tests ensuring `import nodmod` does not require `pydub` at module import time and that WAV APIs fail with clear scoped messages when optional dependencies are missing.
+- Added fixture-hash WAV stability tests (`tests/test_wav_fixture_hashes.py`) asserting deterministic sample load/save behavior for MOD/XM on a canonical WAV fixture.
+
+### Changed
+
+- Expanded declared and tested Python support to `3.10` through `3.14`.
+- Added conditional runtime dependency `audioop-lts` for Python `>=3.13`.
+- Moved `pydub` imports from module import-time to WAV-only code paths in `modsong` and `xmsong` to avoid import-time failures on Python versions where `audioop` is absent.
+- Updated CI test matrix to run on Python `3.10`, `3.11`, `3.12`, `3.13`, and `3.14`.
+
+### Documentation
+
+- Updated release metadata references in README and project version fields for `v1.0.5`.
+
 ## [1.0.4] - 2026-04-08
 
 ### Changed
