@@ -11,7 +11,6 @@
 NodMOD is a Python library for reading, editing, and writing tracker modules.
 
 Current stable release: `v1.0.4`.
-Python support: `3.10`, `3.11`, `3.12`.
 
 It currently focuses on three classic formats:
 
@@ -248,7 +247,7 @@ Scope semantics:
 
 ## Requirements
 
-- Python 3.11 or 3.12 (current tested support)
+- Python 3.10, 3.11, or 3.12
 - Python 3.13+ compatibility is tracked in [#30](https://github.com/erodola/nodmod/issues/30)
 - pydub 0.25.1+
 - Optional: `openmpt123` or `ffmpeg` for WAV rendering
