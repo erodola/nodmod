@@ -434,6 +434,38 @@ def test_used_resources_equivalent_to_manual_scans() -> None:
                 assert_true(api_sorted == sorted(manual), f"used_samples sorted mismatch for {path.name}")
 
 
+def test_fixture_mod_roundtrip_is_byte_exact(tmp_path) -> None:
+    _assert_fixtures_exist()
+    source = FIXTURES["mod"]
+
+    song = load_song(str(source), verbose=False)
+    out_path = tmp_path / source.name
+    song.save(str(out_path), verbose=False)
+
+    assert_true(
+        out_path.read_bytes() == source.read_bytes(),
+        "MOD fixture save/load/save should be byte-exact to source fixture",
+    )
+
+
+def test_fixture_roundtrip_bytes_are_stable_across_formats(tmp_path) -> None:
+    _assert_fixtures_exist()
+    for path in FIXTURES.values():
+        out1 = tmp_path / f"round1_{path.name}"
+        out2 = tmp_path / f"round2_{path.name}"
+
+        song1 = load_song(str(path), verbose=False)
+        song1.save(str(out1), verbose=False)
+
+        song2 = load_song(str(out1), verbose=False)
+        song2.save(str(out2), verbose=False)
+
+        assert_true(
+            out1.read_bytes() == out2.read_bytes(),
+            f"Roundtrip bytes should stabilize after one pass for {path.name}",
+        )
+
+
 if __name__ == "__main__":
     test_load_song_equivalent_to_manual_dispatch()
     test_iter_cells_equivalent_to_direct_pattern_walk()

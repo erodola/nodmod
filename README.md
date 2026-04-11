@@ -11,7 +11,7 @@
 NodMOD is a Python library for reading, editing, and writing tracker modules.
 
 Current stable release: `v1.0.4`.
-Current tested Python support: `3.11`, `3.12`.
+Python support: `3.10`, `3.11`, `3.12`.
 
 It currently focuses on three classic formats:
 

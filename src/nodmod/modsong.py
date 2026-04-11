@@ -467,11 +467,11 @@ class MODSong(Song):
                 raise ValueError(f"Sample length {int(len(waveform) / 2)} words exceeds MOD max 65536 words (128 KB).")
             data += int(len(waveform) / 2).to_bytes(2, byteorder='big', signed=False)
 
-            data += ((smp.finetune << 4) >> 4).to_bytes(1)
+            data += ((smp.finetune << 4) >> 4).to_bytes(1, byteorder='big', signed=False)
 
             if smp.volume > 64:
                 print(f"Warning: Truncating max sample volume from {smp.volume} to 64.")
-            data += min(smp.volume, 64).to_bytes(1)
+            data += min(smp.volume, 64).to_bytes(1, byteorder='big', signed=False)
 
             data += int(smp.repeat_point / 2).to_bytes(2, byteorder='big', signed=False)
             data += int(smp.repeat_len / 2).to_bytes(2, byteorder='big', signed=False)
@@ -480,8 +480,8 @@ class MODSong(Song):
         # Write the song sequence
         # ----------------------------
 
-        data += len(self.pattern_seq).to_bytes(1)
-        data += int(self._restart_position_raw).to_bytes(1)
+        data += len(self.pattern_seq).to_bytes(1, byteorder='big', signed=False)
+        data += int(self._restart_position_raw).to_bytes(1, byteorder='big', signed=False)
         data += bytearray(self.pattern_seq) + bytearray(128 - len(self.pattern_seq))
         data += bytes("M.K.", 'utf-8')
 
