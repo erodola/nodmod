@@ -4,7 +4,6 @@
 [![Ruff](https://github.com/erodola/nodmod/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/erodola/nodmod/actions/workflows/lint.yml?query=branch%3Amain)
 [![Release](https://img.shields.io/github/v/release/erodola/nodmod?sort=semver)](https://github.com/erodola/nodmod/releases/tag/v1.0.4)
 [![Python versions](https://img.shields.io/pypi/pyversions/nodmod)](https://pypi.org/project/nodmod/)
-[![PyPI downloads](https://img.shields.io/pypi/dm/nodmod)](https://pypi.org/project/nodmod/)
 [![License](https://img.shields.io/pypi/l/nodmod)](https://pypi.org/project/nodmod/)
 [![Last Commit](https://img.shields.io/github/last-commit/erodola/nodmod)](https://github.com/erodola/nodmod/commits/main)
 [![Formats](https://img.shields.io/badge/formats-MOD%20%7C%20XM%20%7C%20S3M-4c8bf5)](https://github.com/erodola/nodmod)
@@ -12,7 +11,6 @@
 NodMOD is a Python library for reading, editing, and writing tracker modules.
 
 Current stable release: `v1.0.4`.
-Current tested Python support: `3.11`, `3.12`.
 
 It currently focuses on three classic formats:
 
@@ -249,9 +247,9 @@ Scope semantics:
 
 ## Requirements
 
-- Python 3.11 or 3.12 (current tested support)
-- Python 3.13+ compatibility is tracked in [#30](https://github.com/erodola/nodmod/issues/30)
+- Python 3.10, 3.11, 3.12, 3.13, or 3.14
 - pydub 0.25.1+
+- `audioop-lts` is pulled automatically on Python 3.13+
 - Optional: `openmpt123` or `ffmpeg` for WAV rendering
 
 ## Project Status
