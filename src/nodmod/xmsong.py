@@ -2353,6 +2353,41 @@ class XMSong(Song):
             audio = audio.set_frame_rate(force_sample_rate)
         audio.export(fname, format="wav")
 
+    def get_sample_duration(
+        self,
+        inst_idx: int,
+        sample_idx: int,
+        period: str = "C-4",
+        sample_rate: int | float | None = None,
+    ) -> float:
+        """Return XM sample duration in seconds.
+
+        When ``sample_rate`` is not provided, duration is computed from the XM
+        tuning model using:
+        - reference note ``period`` (default ``C-4``)
+        - sample ``relative_note`` (coarse semitone transpose)
+        - sample ``finetune`` (1/128 semitone)
+
+        The base reference is 8363 Hz at ``C-4`` with zero transpose/finetune.
+        This follows the XM finetune and transpose semantics described in the
+        XM format docs.
+        """
+        smp = self.get_sample(inst_idx, sample_idx)
+        if len(smp.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+
+        if sample_rate is not None:
+            effective_sample_rate = float(sample_rate)
+            if effective_sample_rate <= 0:
+                raise ValueError(f"Invalid sample_rate {sample_rate} (expected > 0).")
+        else:
+            ref_note_idx = Song.note_to_index(period)
+            c4_idx = Song.note_to_index("C-4")
+            semitone_offset = (ref_note_idx - c4_idx) + smp.relative_note + (smp.finetune / 128.0)
+            effective_sample_rate = 8363.0 * (2.0 ** (semitone_offset / 12.0))
+
+        return len(smp.waveform) / effective_sample_rate
+
     '''
     -------------------------------------
     PATTERNS
@@ -2560,11 +2595,3 @@ class XMSong(Song):
 
         return max([len(unrolled_data[c]) for c in range(n_channels)]) if n_channels > 0 else 0
 
-    def get_pattern_duration(self, pattern: int) -> float:
-        """
-        Returns the duration of a pattern in seconds.
-
-        :param pattern: The pattern index (within the song sequence).
-        :return: The pattern duration in seconds.
-        """
-        raise NotImplementedError("XMSong.get_pattern_duration() is not implemented.")
