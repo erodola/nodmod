@@ -165,6 +165,59 @@ def test_s3m_load_sample_from_raw_and_errors() -> None:
     assert_raises_msg(ValueError, "No empty sample slots available", full.load_sample_from_raw, [0.0], None, 8363)
 
 
+def test_s3m_sample_convenience_helpers() -> None:
+    song = S3MSong()
+    song.load_sample_from_raw([0.0, 0.4, -0.4, 0.0], sample_idx=1, input_sr=8363)
+    song.load_sample_from_raw([0.0, 0.2, -0.2], sample_idx=2, input_sr=8363)
+
+    song.set_sample_name(1, "Lead")
+    song.set_sample_volume(1, 40)
+    song.set_sample_loop(1, 1, 2)
+
+    sample = song.get_sample(1)
+    assert_true(sample.name == "Lead", "S3M set_sample_name failed")
+    assert_true(sample.volume == 40, "S3M set_sample_volume failed")
+    assert_true(sample.repeat_point == 1 and sample.repeat_len == 2, "S3M set_sample_loop failed")
+
+    assert_raises_msg(ValueError, "Invalid volume", song.set_sample_volume, 1, 999)
+    assert_raises_msg(IndexError, "Invalid sample index", song.set_sample_name, 0, "x")
+    assert_raises_msg(IndexError, "Invalid sample index", song.remove_sample, 0)
+    assert_raises_msg(IndexError, "Invalid sample index", song.keep_sample, 0)
+
+    duration = song.get_sample_duration(1)
+    assert_true(duration > 0.0, "S3M get_sample_duration should be positive")
+    assert_raises_msg(ValueError, "sample_rate", song.get_sample_duration, 1, 0)
+    assert_raises_msg(ValueError, "has no waveform data", song.get_sample_duration, 3)
+
+    sample.repeat_point = len(sample.waveform)
+    sample.repeat_len = 2
+    assert_raises_msg(ValueError, "outside sample length", song.validate_sample_loop, 1)
+    assert_raises_msg(ValueError, "Sample 1:", song.validate_samples)
+
+    song.sanitize_samples()
+    song.validate_samples()
+
+    dst = S3MSong()
+    new_indices = dst.copy_samples_from(song, [1, 2])
+    assert_true(new_indices == [1, 2], "S3M copy_samples_from destination indices mismatch")
+    assert_true(
+        len(dst.get_sample(1).waveform) == len(song.get_sample(1).waveform),
+        "S3M copied sample 1 waveform length mismatch",
+    )
+    assert_true(
+        len(dst.get_sample(2).waveform) == len(song.get_sample(2).waveform),
+        "S3M copied sample 2 waveform length mismatch",
+    )
+
+    dst.remove_sample(1)
+    assert_true(len(dst.get_sample(1).waveform) == 0, "S3M remove_sample should clear waveform")
+
+    dst.keep_sample(2)
+    assert_true(len(dst.get_sample(2).waveform) > 0, "S3M keep_sample should preserve selected sample")
+    others_empty = all(len(dst.get_sample(i).waveform) == 0 for i in range(1, dst.MAX_SAMPLES + 1) if i != 2)
+    assert_true(others_empty, "S3M keep_sample should clear all non-selected samples")
+
+
 if __name__ == "__main__":
     test_s3m_load_pcm_sample_8bit()
     test_s3m_load_pcm_sample_16bit()
@@ -172,4 +225,5 @@ if __name__ == "__main__":
     test_s3m_load_real_pcm_samples()
     test_s3m_sample_io_parity_methods()
     test_s3m_load_sample_from_raw_and_errors()
+    test_s3m_sample_convenience_helpers()
     print("OK: test_s3m_sample_api.py")

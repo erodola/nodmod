@@ -928,6 +928,57 @@ class S3MSong(Song):
             audio = audio.set_frame_rate(force_sample_rate)
         audio.export(fname, format="wav")
 
+    def set_sample_name(self, sample_idx: int, name: str) -> None:
+        """Set the name of one S3M sample slot."""
+        sample = self.get_sample(sample_idx)
+        sample.name = name
+
+    def set_sample_volume(self, sample_idx: int, volume: int) -> None:
+        """Set the volume of one S3M sample slot."""
+        if volume < 0 or volume > 64:
+            raise ValueError(f"Invalid volume {volume} (expected 0-64).")
+        sample = self.get_sample(sample_idx)
+        sample.volume = volume
+
+    def set_sample_loop(self, sample_idx: int, start: int, length: int) -> None:
+        """Set loop start and length (in samples) for one S3M sample slot."""
+        sample = self.get_sample(sample_idx)
+        sample.repeat_point = max(0, start)
+        sample.repeat_len = max(0, length)
+
+    def sanitize_samples(self, *, mode: str = "coerce") -> None:
+        """Sanitize loop metadata for all S3M sample slots."""
+        for sample in self.samples:
+            sample.sanitize_loop(mode=mode)
+
+    def validate_samples(self) -> None:
+        """Validate loop metadata for all S3M sample slots."""
+        for sample_idx, sample in enumerate(self.samples, start=1):
+            try:
+                sample.validate_loop()
+            except ValueError as exc:
+                raise ValueError(f"Sample {sample_idx}: {exc}") from exc
+
+    def validate_sample_loop(self, sample_idx: int) -> None:
+        """Validate one S3M sample loop."""
+        sample = self.get_sample(sample_idx)
+        sample.validate_loop()
+
+    def get_sample_duration(self, sample_idx: int, sample_rate: int | None = None) -> float:
+        """Return one S3M sample duration in seconds."""
+        if sample_idx <= 0 or sample_idx > self.MAX_SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
+
+        sample = self.samples[sample_idx - 1]
+        if len(sample.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+
+        effective_sample_rate = sample_rate if sample_rate is not None else (sample.c2spd or 8363)
+        if effective_sample_rate <= 0:
+            raise ValueError(f"Invalid sample_rate {effective_sample_rate} (expected > 0).")
+
+        return len(sample.waveform) / effective_sample_rate
+
     def copy_sample_from(self, src: 'S3MSong', src_sample_idx: int, dst_sample_idx: int | None = None) -> int:
         """Copy a sample slot from another S3M song.
 
@@ -952,6 +1003,32 @@ class S3MSong(Song):
         self.samples[dst_sample_idx - 1] = copy.deepcopy(src.get_sample(src_sample_idx))
         self._update_n_actual_samples()
         return dst_sample_idx
+
+    def copy_samples_from(self, src: 'S3MSong', src_sample_indices: list[int]) -> list[int]:
+        """Copy multiple sample slots from another S3M song into next empty slots."""
+        new_indices: list[int] = []
+        for idx in src_sample_indices:
+            new_indices.append(self.copy_sample_from(src, idx, None))
+        return new_indices
+
+    def remove_sample(self, sample_idx: int) -> None:
+        """Clear one S3M sample slot.
+
+        Notes referencing that slot are not modified.
+        """
+        if sample_idx <= 0 or sample_idx > self.MAX_SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
+        self.samples[sample_idx - 1] = S3MSample()
+        self._update_n_actual_samples()
+
+    def keep_sample(self, sample_idx: int) -> None:
+        """Clear all S3M sample slots except one selected slot."""
+        if sample_idx <= 0 or sample_idx > self.MAX_SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
+        for idx in range(self.MAX_SAMPLES):
+            if idx + 1 != sample_idx:
+                self.samples[idx] = S3MSample()
+        self._update_n_actual_samples()
 
     def set_n_channels(self, n: int) -> None:
         """Convenience wrapper around the channel-count property setter.
