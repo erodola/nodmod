@@ -162,7 +162,7 @@ class XMSong(Song):
         
         # XM-specific attributes
         new_song.instruments = copy.deepcopy(self.instruments)
-        new_song.n_instruments = self.n_instruments
+        new_song.n_instruments = len(new_song.instruments)
         new_song.tracker_name = self.tracker_name
         new_song.song_restart = self.song_restart
         new_song.flags = self.flags
@@ -2056,6 +2056,8 @@ class XMSong(Song):
         if inst_idx <= 0 or inst_idx > len(self.instruments):
             raise IndexError(f"Invalid instrument index {inst_idx} (expected 1-{len(self.instruments)}).")
         self.instruments[inst_idx - 1] = Instrument()
+        # Keep public header-style count synchronized with the live instrument list.
+        self.n_instruments = len(self.instruments)
 
     def add_sample(self, inst_idx: int, sample: XMSample) -> int:
         """

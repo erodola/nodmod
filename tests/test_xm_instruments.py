@@ -208,6 +208,24 @@ def test_xm_sample_helpers() -> None:
     assert_raises_msg(ValueError, "fadeout", song.set_instrument_fadeout, inst_idx, 999999)
 
 
+def test_xm_n_instruments_stays_synced_on_mutators() -> None:
+    song = XMSong()
+    i1 = song.new_instrument("One")
+    assert_true(song.n_instruments == len(song.instruments), "n_instruments should match list length after add")
+
+    # Force artificial drift, then verify mutators resync.
+    song.n_instruments = 999
+    song.remove_instrument(i1)
+    assert_true(song.n_instruments == len(song.instruments), "remove_instrument should resync n_instruments")
+
+    song.n_instruments = 123
+    song.new_instrument("Two")
+    assert_true(song.n_instruments == len(song.instruments), "new_instrument should resync n_instruments")
+
+    clone = song.copy()
+    assert_true(clone.n_instruments == len(clone.instruments), "copy should preserve synced n_instruments")
+
+
 if __name__ == "__main__":
     tmp_dir = os.path.join(os.getcwd(), "dev")
     test_xm_instrument_copy()
@@ -216,4 +234,5 @@ if __name__ == "__main__":
     test_xm_instrument_edge_cases()
     test_xm_validation_helpers()
     test_xm_sample_helpers()
+    test_xm_n_instruments_stays_synced_on_mutators()
     print("OK: test_xm_instruments.py")
