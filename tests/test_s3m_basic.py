@@ -172,6 +172,8 @@ if __name__ == '__main__':
     test_s3m_song_defaults()
     test_s3m_basic_editing()
     test_s3m_sequence_limits()
+    test_s3m_channel_ops()
+    test_s3m_mute_channel_preserves_global_effects()
     test_s3m_header_load_synthetic()
     test_s3m_header_load_real_files()
     print("OK: test_s3m_basic.py")
