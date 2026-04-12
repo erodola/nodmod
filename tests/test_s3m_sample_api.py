@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import array
 import os
 import struct
 import tempfile
 
 from nodmod import S3MSong
 from nodmod.types import S3MSample
-from .test_helpers import assert_raises_msg, assert_true, pick_files
+from .test_helpers import assert_raises_msg, assert_true, pick_files, with_temp_wav
 
 
 def _build_s3m_with_one_instrument(inst_type: int, sample_type: int, flags: int, sample_bytes: bytes) -> bytes:
@@ -123,9 +124,52 @@ def test_s3m_load_real_pcm_samples() -> None:
         assert_true(all(not sample.is_stereo for sample in non_empty), "Real S3M stereo flag mismatch")
 
 
+def test_s3m_sample_io_parity_methods() -> None:
+    song = S3MSong()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        wav_in = os.path.join(tmp_dir, "s3m_sample_in.wav")
+        wav_out = os.path.join(tmp_dir, "s3m_sample_out.wav")
+
+        with_temp_wav(wav_in)
+
+        idx, smp = song.load_sample(wav_in)
+        assert_true(idx == 1, "S3M load_sample should use first empty slot")
+        assert_true(isinstance(smp, S3MSample), "S3M load_sample should return S3MSample")
+        assert_true(song.get_sample(idx) is smp, "S3M load_sample should store sample in song slot")
+        assert_true(smp.instrument_type == 1, "S3M load_sample should mark slot as PCM instrument")
+        assert_true(len(smp.waveform) == 4, "S3M load_sample waveform length mismatch")
+
+        song.save_sample(idx, wav_out)
+        assert_true(os.path.isfile(wav_out), "S3M save_sample should create wav output")
+
+
+def test_s3m_load_sample_from_raw_and_errors() -> None:
+    song = S3MSong()
+    idx, smp = song.load_sample_from_raw([0.0, 1.0, -1.0, 0.0], input_sr=8000)
+    assert_true(idx == 1, "S3M raw import should use first empty slot")
+    assert_true(smp.is_16bit is False, "S3M raw import should create 8-bit sample")
+    assert_true(smp.instrument_type == 1, "S3M raw import should mark slot as PCM instrument")
+    assert_true(len(smp.waveform) > 0, "S3M raw import should create non-empty waveform")
+
+    assert_raises_msg(IndexError, "Invalid sample index", song.load_sample, "nope.wav", 0)
+    assert_raises_msg(IndexError, "Invalid sample index", song.load_sample_from_raw, [0.0], 0, 8363)
+    assert_raises_msg(IndexError, "Invalid sample index", song.save_sample, 0, "out.wav")
+    assert_raises_msg(ValueError, "has no waveform data", song.save_sample, 2, "out.wav")
+
+    full = S3MSong()
+    for i in range(1, full.MAX_SAMPLES + 1):
+        sample = S3MSample()
+        sample.instrument_type = 1
+        sample.waveform = array.array('b', [0])
+        full.set_sample(i, sample)
+    assert_raises_msg(ValueError, "No empty sample slots available", full.load_sample_from_raw, [0.0], None, 8363)
+
+
 if __name__ == "__main__":
     test_s3m_load_pcm_sample_8bit()
     test_s3m_load_pcm_sample_16bit()
     test_s3m_rejects_adlib_instruments()
     test_s3m_load_real_pcm_samples()
+    test_s3m_sample_io_parity_methods()
+    test_s3m_load_sample_from_raw_and_errors()
     print("OK: test_s3m_sample_api.py")

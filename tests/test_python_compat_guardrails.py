@@ -52,7 +52,7 @@ print("import-ok")
 def test_wav_apis_raise_clear_error_when_pydub_is_missing() -> None:
     script = r"""
 import builtins
-from nodmod import MODSong, XMSong
+from nodmod import MODSong, S3MSong, XMSong
 
 real_import = builtins.__import__
 
@@ -85,6 +85,17 @@ except ImportError as exc:
 else:
     print("xm did not raise ImportError")
     raise SystemExit(20)
+
+s3m = S3MSong()
+try:
+    s3m.load_sample_from_raw([0.0], 1)
+except ImportError as exc:
+    if "WAV sample I/O requires `pydub`." not in str(exc):
+        print(f"bad-s3m-msg: {exc}")
+        raise SystemExit(31)
+else:
+    print("s3m did not raise ImportError")
+    raise SystemExit(30)
 
 print("wav-errors-ok")
 """

@@ -15,6 +15,21 @@ from nodmod import Song
 from .views import PlaybackRowView
 
 
+def _require_pydub():
+    """Import pydub lazily so non-WAV S3M APIs work without WAV extras."""
+    try:
+        import pydub
+    except ImportError as exc:
+        missing = getattr(exc, "name", "")
+        if missing in {"audioop", "pyaudioop"}:
+            raise ImportError(
+                "WAV sample I/O requires audioop compatibility on this Python. "
+                "Install `audioop-lts`."
+            ) from exc
+        raise ImportError("WAV sample I/O requires `pydub`.") from exc
+    return pydub
+
+
 class S3MSong(Song):
     """Scream Tracker 3 song format with a MOD-like sample-oriented API.
 
@@ -787,6 +802,131 @@ class S3MSong(Song):
                 if preserved:
                     new_note.effect = preserved
                 pat.data[channel][row] = new_note
+
+    def load_sample(self, fname: str, sample_idx: int | None = None) -> tuple[int, S3MSample]:
+        """Load a WAV sample into one S3M sample slot.
+
+        :param fname: Path to the input ``.wav`` file.
+        :param sample_idx: Destination 1-based sample index, or ``None`` to use the next empty slot.
+        :return: ``(sample_idx, sample)`` for the loaded slot.
+        """
+        if sample_idx is not None and (sample_idx <= 0 or sample_idx > self.MAX_SAMPLES):
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
+        if sample_idx is None:
+            for idx, sample in enumerate(self.samples, start=1):
+                if len(sample.waveform) == 0:
+                    sample_idx = idx
+                    break
+            if sample_idx is None:
+                raise ValueError(f"No empty sample slots available (1-{self.MAX_SAMPLES} are full).")
+
+        pydub = _require_pydub()
+        audio = pydub.AudioSegment.from_wav(fname).set_channels(1)
+        if audio.sample_width not in (1, 2):
+            audio = audio.set_sample_width(2)
+
+        sample = S3MSample()
+        sample.instrument_type = 1
+        sample.waveform = audio.get_array_of_samples()
+        sample.is_16bit = audio.sample_width == 2
+        sample.is_stereo = False
+        sample.pack = 0
+        sample.c2spd = 8363
+
+        self.samples[sample_idx - 1] = sample
+        self._update_n_actual_samples()
+        return sample_idx, sample
+
+    def load_sample_from_raw(
+        self,
+        raw_samples: list[float],
+        sample_idx: int | None = None,
+        input_sr: int = 8363,
+    ) -> tuple[int, S3MSample]:
+        """Load normalized mono float samples into one S3M sample slot.
+
+        Input values are clipped to ``[-1.0, 1.0]``, converted to signed 8-bit PCM,
+        and resampled to the S3M default ``C-4 speed`` of 8363 Hz.
+
+        :param raw_samples: Mono normalized PCM samples in ``[-1.0, 1.0]``.
+        :param sample_idx: Destination 1-based sample index, or ``None`` for next empty slot.
+        :param input_sr: Input sample rate in Hz.
+        :return: ``(sample_idx, sample)`` for the loaded slot.
+        """
+        if sample_idx is not None and (sample_idx <= 0 or sample_idx > self.MAX_SAMPLES):
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
+        if sample_idx is None:
+            for idx, sample in enumerate(self.samples, start=1):
+                if len(sample.waveform) == 0:
+                    sample_idx = idx
+                    break
+            if sample_idx is None:
+                raise ValueError(f"No empty sample slots available (1-{self.MAX_SAMPLES} are full).")
+
+        pcm_bytes = bytearray()
+        for s in raw_samples:
+            if s > 1.0:
+                s = 1.0
+            elif s < -1.0:
+                s = -1.0
+            pcm_bytes.append(struct.pack('b', int(s * 127))[0])
+
+        pydub = _require_pydub()
+        audio = pydub.AudioSegment(
+            data=bytes(pcm_bytes),
+            sample_width=1,
+            frame_rate=input_sr,
+            channels=1,
+        )
+        audio = audio.set_frame_rate(8363)
+
+        sample = S3MSample()
+        sample.instrument_type = 1
+        sample.waveform = audio.get_array_of_samples()
+        sample.is_16bit = False
+        sample.is_stereo = False
+        sample.pack = 0
+        sample.c2spd = 8363
+
+        self.samples[sample_idx - 1] = sample
+        self._update_n_actual_samples()
+        return sample_idx, sample
+
+    def save_sample(
+        self,
+        sample_idx: int,
+        fname: str,
+        sample_rate: int | None = None,
+        force_sample_rate: int | None = None,
+    ) -> None:
+        """Save one S3M sample slot as a WAV file.
+
+        :param sample_idx: 1-based sample index to export.
+        :param fname: Destination ``.wav`` path.
+        :param sample_rate: Optional source playback rate (defaults to sample ``c2spd`` or 8363).
+        :param force_sample_rate: Optional output WAV rate override.
+        """
+        if sample_idx <= 0 or sample_idx > self.MAX_SAMPLES:
+            raise IndexError(f"Invalid sample index {sample_idx} (expected 1-{self.MAX_SAMPLES}).")
+
+        sample = self.samples[sample_idx - 1]
+        if len(sample.waveform) == 0:
+            raise ValueError(f"Sample {sample_idx} has no waveform data")
+
+        if sample_rate is None:
+            sample_rate = sample.c2spd or 8363
+        sample_width = 2 if sample.is_16bit else 1
+
+        pydub = _require_pydub()
+        audio = pydub.AudioSegment(
+            data=sample.waveform.tobytes(),
+            sample_width=sample_width,
+            frame_rate=sample_rate,
+            channels=1,
+        )
+        if force_sample_rate is not None and force_sample_rate != sample_rate:
+            audio = audio.set_frame_rate(force_sample_rate)
+        audio.export(fname, format="wav")
 
     def copy_sample_from(self, src: 'S3MSong', src_sample_idx: int, dst_sample_idx: int | None = None) -> int:
         """Copy a sample slot from another S3M song.
