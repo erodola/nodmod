@@ -364,11 +364,20 @@ class S3MSample(Sample):
         self.flags = 0
         self.is_16bit = False
         self.is_stereo = False
+        # Instrument-header byte 29 ("dsk" in old docs), preserved as-is.
         self.dsk = 0
         self.sample_offset = 0
-        self._reserved_byte = 0
         self._internal: bytes = b'\x00' * 12
         self._signature = "SCRS"
+
+    @property
+    def _reserved_byte(self) -> int:
+        """Backward-compatible alias for the S3M instrument-header dsk byte."""
+        return self.dsk
+
+    @_reserved_byte.setter
+    def _reserved_byte(self, value: int) -> None:
+        self.dsk = int(value) & 0xFF
 
 
 class EnvelopePoint:

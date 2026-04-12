@@ -25,6 +25,7 @@ def _make_generated_song() -> S3MSong:
     sample1.name = "Lead"
     sample1.filename = "LEAD.SMP"
     sample1.volume = 32
+    sample1.dsk = 0x2A
     sample1.c2spd = 8363
     sample1.waveform = array.array('b', [-128, -64, 0, 64, 127])
     sample1.repeat_point = 1
@@ -36,6 +37,7 @@ def _make_generated_song() -> S3MSong:
     sample2.name = "Bass16"
     sample2.filename = "BASS.SMP"
     sample2.volume = 40
+    sample2.dsk = 0x7F
     sample2.c2spd = 9000
     sample2.is_16bit = True
     sample2.waveform = array.array('h', [-32768, -1000, 0, 1000, 32767])

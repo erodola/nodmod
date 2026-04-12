@@ -183,6 +183,7 @@ def compare_s3m_songs(a: S3MSong, b: S3MSong) -> None:
         assert_true(sa.name == sb.name, "S3M sample name mismatch")
         assert_true(sa.filename == sb.filename, "S3M sample filename mismatch")
         assert_true(sa.volume == sb.volume, "S3M sample volume mismatch")
+        assert_true(sa.dsk == sb.dsk, "S3M sample dsk mismatch")
         assert_true(sa.pack == sb.pack, "S3M sample pack mismatch")
         assert_true(sa.is_16bit == sb.is_16bit, "S3M sample 16-bit flag mismatch")
         assert_true(sa.is_stereo == sb.is_stereo, "S3M sample stereo flag mismatch")

@@ -891,7 +891,7 @@ class S3MSong(Song):
             loop_start = struct.unpack_from('<I', inst, 20)[0]
             loop_end = struct.unpack_from('<I', inst, 24)[0]
             sample.volume = inst[28]
-            sample._reserved_byte = inst[29]
+            sample.dsk = inst[29]  # Preserve instrument-header byte 29 ("dsk") for exact round-trip.
             sample.pack = inst[30]
             sample.flags = inst[31]
             sample.is_stereo = bool(sample.flags & 0x02)
@@ -1102,7 +1102,7 @@ class S3MSong(Song):
             struct.pack_into('<I', header, 20, loop_start)
             struct.pack_into('<I', header, 24, loop_end)
             header[28] = max(0, min(64, sample.volume))
-            header[29] = getattr(sample, '_reserved_byte', 0)
+            header[29] = int(getattr(sample, 'dsk', 0)) & 0xFF  # Persist S3M instrument-header byte 29 ("dsk").
             header[30] = sample.pack
             flags = sample.flags & ~0x07
             if sample.repeat_len > 0:
