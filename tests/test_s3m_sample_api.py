@@ -109,11 +109,10 @@ def test_s3m_rejects_adlib_instruments() -> None:
 
 
 def test_s3m_load_real_pcm_samples() -> None:
-    root = r"G:\My Drive\Moduli"
-    if not os.path.isdir(root):
-        return
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "music"))
+    assert_true(os.path.isdir(root), "Repo music/ directory not found for S3M sample tests")
     files = sorted(pick_files(root, ".s3m", 3))
-    assert_true(len(files) > 0, "No S3M files found for sample tests")
+    assert_true(len(files) > 0, "No S3M files found in repo music/ for sample tests")
     for path in files:
         song = S3MSong()
         song.load(path, verbose=False)

@@ -66,11 +66,10 @@ def test_s3m_generated_roundtrip() -> None:
 
 
 def test_s3m_corpus_semantic_roundtrip() -> None:
-    root = r"G:\My Drive\Moduli"
-    if not os.path.isdir(root):
-        return
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "music"))
+    assert_true(os.path.isdir(root), "Repo music/ directory not found for S3M roundtrip tests")
     files = sorted(pick_files(root, ".s3m", 5))
-    assert_true(len(files) > 0, "No S3M files found for roundtrip tests")
+    assert_true(len(files) > 0, "No S3M files found in repo music/ for roundtrip tests")
     with tempfile.TemporaryDirectory() as tmp_dir:
         for idx, source in enumerate(files, start=1):
             song = S3MSong()

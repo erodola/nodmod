@@ -148,11 +148,10 @@ def test_s3m_header_load_synthetic() -> None:
 
 
 def test_s3m_header_load_real_files() -> None:
-    root = r"G:\My Drive\Moduli"
-    if not os.path.isdir(root):
-        return
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "music"))
+    assert_true(os.path.isdir(root), "Repo music/ directory not found for S3M header tests")
     files = sorted(pick_files(root, ".s3m", 3))
-    assert_true(len(files) > 0, "No S3M files found for header tests")
+    assert_true(len(files) > 0, "No S3M files found in repo music/ for header tests")
     for path in files:
         song = S3MSong()
         song.load(path, verbose=False)
